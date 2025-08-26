@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useToast } from '@/hooks/use-toast';
+import { subscribeSettings, saveSettings } from '@/services/settings-service';
+import { ProtectedAdmin } from '@/hooks/use-auth';
 import { Loader2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -49,20 +51,24 @@ export default function SettingsPage() {
         }
     });
 
+    useEffect(() => {
+        const unsub = subscribeSettings((data) => {
+            if (data) {
+                form.reset({ businessName: data.businessName || '', ruc: data.ruc || '', address: data.address || '', taxRate: data.taxRate || 18 });
+            }
+        });
+        return () => unsub();
+    }, []);
+
     const onSubmit = async (data: SettingsFormValues) => {
         setLoading(true);
-        // Simulate saving settings
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        console.log("Saving settings (simulated):", data);
-
-        toast({
-            title: "Configuración Guardada",
-            description: "La información de tu negocio ha sido actualizada.",
-        });
+        await saveSettings(data);
+        toast({ title: 'Configuración Guardada', description: 'La información de tu negocio ha sido actualizada.' });
         setLoading(false);
     };
 
     return (
+        <ProtectedAdmin fallback={<div className="p-6">Acceso denegado</div>}>
         <div className="flex flex-col gap-8">
             <h1 className="text-3xl font-bold tracking-tight">Configuración del Sistema</h1>
 
@@ -140,5 +146,6 @@ export default function SettingsPage() {
                 </form>
             </Form>
         </div>
+        </ProtectedAdmin>
     );
 }

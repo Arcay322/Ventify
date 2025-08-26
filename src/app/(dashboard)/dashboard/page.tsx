@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
@@ -10,6 +10,12 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { mockBranches } from "@/lib/mock-data";
+import { getBranches } from '@/services/branch-service';
+import { getSales } from '@/services/sales-service';
+import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
+import { subDays, startOfDay, endOfDay, formatISO } from 'date-fns';
 
 const weeklySalesData = [
   { day: 'Lun', sales: 4100 },
@@ -37,6 +43,79 @@ const topProductsData = [
 
 export default function DashboardPage() {
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [branches, setBranches] = useState<any[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
+  const [kpis, setKpis] = useState({ total: 0, avgTicket: 0, transactions: 0 });
+  const [weeklyData, setWeeklyData] = useState<any[]>([]);
+  const [paymentDist, setPaymentDist] = useState<any[]>([]);
+  const [topProducts, setTopProducts] = useState<any[]>([]);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const unsub = getBranches(setBranches);
+    const unsubSales = getSales((s) => setSales(s));
+    return () => { unsub(); unsubSales(); };
+  }, []);
+
+  useEffect(() => {
+    // Recompute KPIs when sales or selectedBranch change
+    const now = Date.now();
+    const todayStart = startOfDay(new Date()).getTime();
+    const filtered = sales.filter(s => selectedBranch === 'all' ? true : s.branchId === selectedBranch);
+    const todaySales = filtered.filter(s => (s.date || 0) >= todayStart);
+    const total = todaySales.reduce((a, b) => a + (b.total || 0), 0);
+    const transactions = todaySales.length;
+    const avg = transactions > 0 ? total / transactions : 0;
+    setKpis({ total, avgTicket: avg, transactions });
+
+    // Weekly data - last 7 days
+    const days = Array.from({ length: 7 }).map((_, i) => {
+      const day = subDays(new Date(), 6 - i);
+      const start = startOfDay(day).getTime();
+      const end = endOfDay(day).getTime();
+      const daySales = filtered.filter(s => (s.date || 0) >= start && (s.date || 0) <= end);
+      return { day: formatISO(day, { representation: 'date' }), sales: daySales.reduce((a,b) => a + (b.total || 0), 0) };
+    });
+    setWeeklyData(days.map(d => ({ day: d.day.slice(5), sales: d.sales })));
+
+    // Payment distribution
+    const methods: Record<string, number> = {};
+    filtered.forEach(s => { methods[s.paymentMethod || 'Unknown'] = (methods[s.paymentMethod || 'Unknown'] || 0) + (s.total || 0); });
+    setPaymentDist(Object.entries(methods).map(([name, value]) => ({ name, value, color: 'hsl(var(--chart-1))' })));
+
+    // Top products (aggregate units sold from sales.items)
+    const prodCounts: Record<string, { sku: string; name: string; units: number }> = {};
+    filtered.forEach(s => {
+      (s.items || []).forEach((it: any) => {
+        const key = it.sku || it.id;
+        if (!prodCounts[key]) prodCounts[key] = { sku: it.sku || it.id, name: it.name, units: 0 };
+        prodCounts[key].units += it.quantity || 0;
+      });
+    });
+    const top = Object.values(prodCounts).sort((a,b) => b.units - a.units).slice(0,5);
+    setTopProducts(top);
+  }, [sales, selectedBranch]);
+
+  const generateZReport = async (branchId = selectedBranch, from = startOfDay(new Date()).getTime(), to = endOfDay(new Date()).getTime()) => {
+    try {
+      const filtered = sales.filter(s => (branchId === 'all' ? true : s.branchId === branchId) && (s.date || 0) >= from && (s.date || 0) <= to);
+      const totalsByMethod: Record<string, number> = {};
+      filtered.forEach(s => { totalsByMethod[s.paymentMethod || 'Unknown'] = (totalsByMethod[s.paymentMethod || 'Unknown'] || 0) + (s.total || 0); });
+      const doc = await addDoc(collection(db, 'cash_closures'), {
+        branchId,
+        from,
+        to,
+        createdAt: Date.now(),
+        totalsByMethod,
+        transactions: filtered.length,
+        total: filtered.reduce((a,b) => a + (b.total || 0), 0),
+      });
+      toast({ title: 'Reporte Z generado', description: `ID: ${doc.id}` });
+    } catch (err) {
+      console.error('Z report error', err);
+      toast({ title: 'Error', description: 'No se pudo generar el reporte Z', variant: 'destructive' });
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -53,9 +132,9 @@ export default function DashboardPage() {
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">Todas las Sucursales</SelectItem>
-                        {mockBranches.map(branch => (
-                            <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-                        ))}
+            {(branches.length ? branches : mockBranches).map(branch => (
+              <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+            ))}
                     </SelectContent>
                 </Select>
             </div>

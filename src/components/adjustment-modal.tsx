@@ -24,9 +24,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from '@/hooks/use-toast';
 import { saveProduct } from '@/services/product-service';
+import { db } from '@/lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { Product } from '@/types/product';
-import { mockBranches } from '@/lib/mock-data';
+import { getBranches } from '@/services/branch-service';
 import { Label } from './ui/label';
 
 // El schema ahora valida un objeto de stocks
@@ -49,6 +51,8 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
         resolver: zodResolver(adjustmentSchema),
     });
 
+    const [branches, setBranches] = useState<any[]>([]);
+
     useEffect(() => {
         if (isOpen && product) {
             form.reset({
@@ -57,12 +61,27 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
         }
     }, [isOpen, product, form]);
 
+    useEffect(() => {
+        const unsub = getBranches((b: any) => setBranches(b));
+        return () => unsub();
+    }, []);
+
     const onSubmit = async (data: AdjustmentFormValues) => {
         if (!product) return;
         setLoading(true);
         try {
             // La lógica para guardar el producto se actualizaría para manejar el nuevo formato de stock
             await saveProduct({ id: product.id, stock: data.stock });
+
+            // Registrar auditoría del ajuste
+            await addDoc(collection(db, 'inventory_adjustments'), {
+                productId: product.id,
+                productName: product.name,
+                before: product.stock,
+                after: data.stock,
+                changedAt: Date.now(),
+                user: null,
+            });
             
             toast({
                 title: "Stock Actualizado",
@@ -101,7 +120,7 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
                     <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4 py-4">
                         <div className="space-y-4">
                             <Label>Cantidades por Sucursal</Label>
-                            {mockBranches.map(branch => (
+                            {branches.map(branch => (
                                 <FormField
                                     key={branch.id}
                                     control={form.control}

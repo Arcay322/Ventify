@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,16 @@ import { Zap, Edit } from "lucide-react";
 import { ReorderModal } from '@/components/reorder-modal';
 import { AdjustmentModal } from '@/components/adjustment-modal';
 import type { Product } from '@/types/product';
-import { mockProducts, mockBranches } from '@/lib/mock-data';
+import { getProducts } from '@/services/product-service';
+import { getBranches } from '@/services/branch-service';
 
 export default function InventoryPage() {
-  const [inventoryItems, setInventoryItems] = useState<Product[]>(mockProducts);
+  const [inventoryItems, setInventoryItems] = useState<Product[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
   const [isReorderModalOpen, setIsReorderModalOpen] = useState(false);
   const [isAdjustmentModalOpen, setIsAdjustmentModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
 
   const handleOpenReorderModal = (product: Product) => {
     setSelectedProduct(product);
@@ -46,6 +49,13 @@ export default function InventoryPage() {
         <CardHeader>
           <CardTitle>Stock Actual</CardTitle>
           <CardDescription>Un resumen de todos los productos en tu inventario por sucursal. Realiza ajustes o genera sugerencias de reorden.</CardDescription>
+          <div className="mt-2 flex items-center gap-2">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={showLowStockOnly} onChange={(e) => setShowLowStockOnly(e.target.checked)} />
+              <span className="text-sm">Mostrar solo bajo stock (≤10)</span>
+            </label>
+            <Button variant="ghost" size="sm" onClick={() => exportCsv(inventoryItems)} className="ml-auto">Exportar CSV</Button>
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -53,22 +63,25 @@ export default function InventoryPage() {
               <TableRow>
                 <TableHead>SKU</TableHead>
                 <TableHead>Producto</TableHead>
-                {mockBranches.map(branch => <TableHead key={branch.id} className="text-center">{branch.name}</TableHead>)}
+                            {branches.map(branch => <TableHead key={branch.id} className="text-center">{branch.name}</TableHead>)}
                 <TableHead className="text-center">Stock Total</TableHead>
                 <TableHead className="text-center">Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {inventoryItems.map((item) => {
+              {inventoryItems.filter(item => {
+                const totalStock = getTotalStock(item.stock);
+                return showLowStockOnly ? totalStock <= 10 : true;
+              }).map((item) => {
                 const totalStock = getTotalStock(item.stock);
                 const status = getStatus(totalStock);
-                const productForModal = { ...item, stock: totalStock };
+                const productForModal = item;
                 return (
                   <TableRow key={item.id}>
                     <TableCell className="font-mono">{item.sku}</TableCell>
                     <TableCell className="font-medium">{item.name}</TableCell>
-                    {mockBranches.map(branch => <TableCell key={branch.id} className="text-center">{item.stock[branch.id] || 0}</TableCell>)}
+                    {branches.map(branch => <TableCell key={branch.id} className="text-center">{item.stock[branch.id] || 0}</TableCell>)}
                     <TableCell className="font-bold text-center">{totalStock}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant={status.variant}>{status.text}</Badge>
@@ -96,3 +109,22 @@ export default function InventoryPage() {
     </div>
   )
 }
+
+function exportCsv(items: Product[]) {
+  const header = ['sku','name','category','totalStock','stockByBranch'];
+  const rows = items.map(it => {
+    const total = Object.values(it.stock || {}).reduce((a,b) => a + b, 0);
+    const byBranch = Object.entries(it.stock || {}).map(([k,v]) => `${k}:${v}`).join(';');
+    return [it.sku, it.name, it.category, String(total), byBranch];
+  });
+  const csv = [header, ...rows].map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `inventory-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Subscriptions are handled inside the component lifecycle above.

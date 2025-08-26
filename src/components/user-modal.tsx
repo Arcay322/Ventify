@@ -23,10 +23,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from '@/hooks/use-toast';
+import { saveUser } from '@/services/user-service';
 import { Loader2 } from 'lucide-react';
 import type { User, Role } from '@/types/user';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { mockBranches } from '@/lib/mock-data';
+import { getBranches } from '@/services/branch-service';
 
 const userSchema = z.object({
     name: z.string().min(1, "El nombre es requerido."),
@@ -49,6 +50,7 @@ const roles: Role[] = ['Administrador', 'Cajero'];
 export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps) {
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
+    const [branches, setBranches] = useState<any[]>([]);
     const form = useForm<UserFormValues>({
         resolver: zodResolver(userSchema),
         defaultValues: {
@@ -73,22 +75,25 @@ export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps
         }
     }, [isOpen, user, form]);
 
+    useEffect(() => {
+        const unsub = getBranches(setBranches);
+        return () => unsub();
+    }, []);
+
     const onSubmit = async (data: UserFormValues) => {
         setLoading(true);
-        // Simular llamada a la API
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const userToSave: User = {
-            id: user?.id || `user-${Date.now()}`,
-            ...data,
-        };
+        const roleMap: Record<string, string> = { 'Administrador': 'admin', 'Cajero': 'cashier' };
+        const userToSave = {
+            id: user?.id,
+            name: data.name,
+            email: data.email,
+            role: roleMap[data.role] || 'cashier',
+            branchId: data.branchId,
+        } as any;
 
-        onSave(userToSave);
-        
-        toast({
-            title: `Usuario ${user ? 'actualizado' : 'creado'}`,
-            description: `El usuario "${data.name}" ha sido guardado exitosamente.`,
-        });
+        await saveUser(userToSave);
+
+        toast({ title: `Usuario ${user ? 'actualizado' : 'creado'}`, description: `El usuario "${data.name}" ha sido guardado.` });
         setLoading(false);
         onOpenChange(false);
     };
@@ -133,7 +138,7 @@ export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps
                                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                                     <FormControl><SelectTrigger><SelectValue placeholder="Selecciona una sucursal" /></SelectTrigger></FormControl>
                                     <SelectContent>
-                                        {mockBranches.map(branch => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
+                                        {branches.map(branch => <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>)}
                                     </SelectContent>
                                 </Select>
                                 <FormMessage /></FormItem>

@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,9 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import Link from 'next/link';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { mockProducts } from '@/lib/mock-data';
+import { getProducts } from '@/services/product-service';
+import { getBranches } from '@/services/branch-service';
+import { getSales, saveSale } from '@/services/sales-service';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
@@ -25,31 +27,16 @@ import { es } from 'date-fns/locale';
 
 type CartItem = Product & { quantity: number };
 
-// Mock de ventas completadas
-const mockSales: Sale[] = [
-    {
-        id: 'SALE-6A3B1C',
-        date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).getTime(),
-        items: [{ ...mockProducts[0], quantity: 1 }, { ...mockProducts[1], quantity: 1 }],
-        total: 123.88,
-        paymentMethod: 'Tarjeta',
-        branchId: 'branch-1'
-    },
-    {
-        id: 'SALE-D9E8F7',
-        date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).getTime(),
-        items: [{ ...mockProducts[2], quantity: 2 }],
-        total: 29.50,
-        paymentMethod: 'Efectivo',
-        branchId: 'branch-2'
-    }
-];
+// Inicialmente sin ventas mock
+const mockSales: Sale[] = [];
 
 
 export default function SalesPage() {
-    const [products, setProducts] = useState<Product[]>(mockProducts);
+    const [products, setProducts] = useState<Product[]>([]);
     const [cart, setCart] = useState<CartItem[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [branches, setBranches] = useState<any[]>([]);
+    const [selectedBranch, setSelectedBranch] = useState<string | null>('branch-1');
     const { toast } = useToast();
     const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
@@ -61,6 +48,17 @@ export default function SalesPage() {
     const [activeSession, setActiveSession] = useState(true);
     const [salesHistory, setSalesHistory] = useState<Sale[]>(mockSales);
     const [transactionSearch, setTransactionSearch] = useState('');
+
+    useEffect(() => {
+        const unsubProd = getProducts(setProducts);
+        const unsubSales = getSales(setSalesHistory);
+        const unsubBranches = getBranches(setBranches);
+        return () => {
+            unsubProd();
+            unsubSales();
+            unsubBranches();
+        }
+    }, []);
 
     const filteredProducts = useMemo(() => {
         if (!searchQuery) return products;
@@ -76,25 +74,30 @@ export default function SalesPage() {
     }, [salesHistory, transactionSearch])
 
     const addToCart = (product: Product) => {
-        const totalStock = Object.values(product.stock).reduce((a, b) => a + b, 0);
-        if (totalStock <= 0) {
-            toast({ title: "Producto Agotado", description: `No queda stock de ${product.name}.`, variant: "destructive" });
+        const branchId = selectedBranch || Object.keys(product.stock || {})[0];
+        const branchStock = typeof product.stock?.[branchId] === 'number' ? product.stock[branchId] : 0;
+        if (branchStock <= 0) {
+            toast({ title: "Producto Agotado", description: `No queda stock de ${product.name} en la sucursal seleccionada.`, variant: "destructive" });
             return;
         }
 
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === product.id);
             if (existingItem) {
-                if (existingItem.quantity < totalStock) {
+                if (existingItem.quantity < branchStock) {
                     return prevCart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
                 } else {
-                    toast({ title: "Stock insuficiente", description: `No puedes agregar más ${product.name} que el stock disponible.`, variant: "destructive" });
+                    toast({ title: "Stock insuficiente", description: `No puedes agregar más ${product.name} que el stock disponible en la sucursal.`, variant: "destructive" });
                     return prevCart;
                 }
             }
             return [...prevCart, { ...product, quantity: 1 }];
         });
     };
+
+    const changeQuantity = (productId: string, quantity: number) => {
+        setCart(prev => prev.map(i => i.id === productId ? { ...i, quantity } : i));
+    }
 
     const removeFromCart = (productId: string) => setCart(cart.filter(item => item.id !== productId));
     const clearCart = () => { setCart([]); setDiscount(0); setDiscountInput(""); }
@@ -128,13 +131,19 @@ export default function SalesPage() {
             tax,
             discount,
             paymentMethod,
-            branchId: 'branch-1', // Simular venta en sucursal 1
+            branchId: selectedBranch || 'branch-1',
         };
 
-        setSalesHistory(prev => [newSale, ...prev]);
-        setCompletedSale(newSale);
-        setIsReceiptModalOpen(true);
-        clearCart();
+        try {
+            const saleId = await saveSale(newSale);
+            newSale.id = saleId;
+            setCompletedSale(newSale);
+            setIsReceiptModalOpen(true);
+            clearCart();
+        } catch (err) {
+            console.error('Error saving sale:', err);
+            toast({ title: 'Error', description: 'No se pudo guardar la venta.', variant: 'destructive' });
+        }
     }
     
     const handleReturnClick = (sale: Sale) => {
@@ -172,18 +181,31 @@ export default function SalesPage() {
                             <Card>
                                 <CardHeader>
                                     <CardTitle>Seleccionar Productos</CardTitle>
-                                    <div className="relative mt-2">
-                                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                        <Input type="search" placeholder="Buscar por nombre o SKU..." className="w-full pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                                    </div>
+                                            <div className="flex items-center gap-4">
+                                                <div className="relative w-full">
+                                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                                    <Input type="search" placeholder="Buscar por nombre o SKU..." className="w-full pl-8" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                                                </div>
+                                                <div className="w-48">
+                                                    <label className="text-xs text-muted-foreground">Sucursal</label>
+                                                    <select value={selectedBranch || ''} onChange={(e) => setSelectedBranch(e.target.value)} className="w-full border rounded p-1">
+                                                        {branches.map(b => (<option key={b.id} value={b.id}>{b.name}</option>))}
+                                                    </select>
+                                                </div>
+                                            </div>
                                 </CardHeader>
                                 <CardContent className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[calc(100vh-25rem)] overflow-y-auto">
                                     {filteredProducts.map(product => (
                                         <Card key={product.id} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => addToCart(product)}>
-                                            <Image src={product.imageUrl} alt={product.name} width={200} height={150} data-ai-hint={product.hint} className="w-full h-24 object-cover rounded-t-lg" />
+                                            {product.imageUrl ? (
+                                                <Image src={product.imageUrl} alt={product.name} width={200} height={150} data-ai-hint={product.hint} className="w-full h-24 object-cover rounded-t-lg" />
+                                            ) : (
+                                                <div className="w-full h-24 bg-muted/40 rounded-t-lg flex items-center justify-center">No Image</div>
+                                            )}
                                             <div className="p-2">
                                                 <h3 className="text-sm font-semibold truncate">{product.name}</h3>
                                                 <p className="text-sm font-bold text-primary">S/{product.price.toFixed(2)}</p>
+                                                <p className="text-xs text-muted-foreground">Stock: {product.stock[selectedBranch || Object.keys(product.stock || {})[0]] || 0}</p>
                                             </div>
                                         </Card>
                                     ))}
@@ -205,13 +227,22 @@ export default function SalesPage() {
                                             {cart.map(item => (
                                                 <div key={item.id} className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3">
-                                                        <Image src={item.imageUrl} alt={item.name} width={40} height={40} data-ai-hint={item.hint} className="rounded-md" />
+                                                        {item.imageUrl ? (
+                                                            <Image src={item.imageUrl} alt={item.name} width={40} height={40} data-ai-hint={item.hint} className="rounded-md" />
+                                                        ) : (
+                                                            <div className="w-10 h-10 bg-muted/40 rounded-md" />
+                                                        )}
                                                         <div>
                                                             <p className="font-medium">{item.name}</p>
                                                             <p className="text-sm text-muted-foreground">S/{item.price.toFixed(2)} x {item.quantity}</p>
                                                         </div>
                                                     </div>
                                                     <div className="flex items-center gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => changeQuantity(item.id, Math.max(1, item.quantity - 1))}>-</Button>
+                                                            <span className="px-2">{item.quantity}</span>
+                                                            <Button size="icon" variant="outline" className="h-7 w-7" onClick={() => changeQuantity(item.id, item.quantity + 1)}>+</Button>
+                                                        </div>
                                                         <p className="font-semibold">S/{(item.price * item.quantity).toFixed(2)}</p>
                                                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeFromCart(item.id)} aria-label={`Eliminar ${item.name}`}><X className="h-4 w-4" /></Button>
                                                     </div>
@@ -299,5 +330,7 @@ export default function SalesPage() {
         </>
     )
 }
+
+// Subscriptions to products/sales/branches are initialized inside the component above.
 
     

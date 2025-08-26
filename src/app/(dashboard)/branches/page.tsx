@@ -1,13 +1,13 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Edit, Trash2 } from "lucide-react";
 import { BranchModal } from '@/components/branch-modal';
 import type { Branch } from '@/types/branch';
-import { mockBranches } from '@/lib/mock-data';
+import { getBranches, saveBranch, deleteBranch } from '@/services/branch-service';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +22,7 @@ import {
 
 
 export default function BranchesPage() {
-  const [branches, setBranches] = useState<Branch[]>(mockBranches);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
 
@@ -31,16 +31,29 @@ export default function BranchesPage() {
     setIsModalOpen(true);
   }
 
-  // Esta función se implementaría con el servicio de base de datos
-  const handleSaveBranch = (branch: Branch) => {
-    // Lógica para guardar la sucursal
-    console.log("Saving branch (simulated):", branch);
+  const handleSaveBranch = async (branch: Branch) => {
+    try {
+      await saveBranch(branch);
+      setIsModalOpen(false);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Error saving branch:', err);
+    }
   };
 
-  const handleDeleteBranch = (branchId: string) => {
-    // Lógica para eliminar la sucursal
-    console.log("Deleting branch (simulated):", branchId);
+  const handleDeleteBranch = async (branchId: string) => {
+    try {
+      await deleteBranch(branchId);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Error deleting branch:', err);
+    }
   }
+
+  useEffect(() => {
+    const unsubscribe = getBranches(setBranches);
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="flex flex-col gap-8">

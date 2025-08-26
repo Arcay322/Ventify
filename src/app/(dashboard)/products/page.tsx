@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
@@ -9,10 +9,11 @@ import { PlusCircle } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductModal } from '@/components/product-modal';
 import type { Product } from '@/types/product';
-import { mockProducts, mockCategories } from '@/lib/mock-data';
+import { getProducts } from '@/services/product-service';
+import { mockCategories } from '@/lib/mock-data';
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>(mockProducts);
+  const [products, setProducts] = useState<Product[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -25,6 +26,11 @@ export default function ProductsPage() {
     return Object.values(stock).reduce((acc, val) => acc + val, 0);
   }
 
+  useEffect(() => {
+    const unsubscribe = getProducts(setProducts);
+    return () => unsubscribe();
+  }, []);
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between">
@@ -35,13 +41,13 @@ export default function ProductsPage() {
       </div>
 
       <Tabs defaultValue="Todos" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-4">
-            {mockCategories.map(category => (
-                <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
-            ))}
-        </TabsList>
+    <TabsList className="grid w-full grid-cols-4 mb-4">
+      {(mockCategories.length ? mockCategories : Array.from(new Set(products.map(p => p.category))).concat(['Todos'])).map(category => (
+        <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
+      ))}
+    </TabsList>
         
-        {mockCategories.map(category => (
+    {(mockCategories.length ? mockCategories : Array.from(new Set(products.map(p => p.category))).concat(['Todos'])).map(category => (
             <TabsContent key={category} value={category}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                     {(category === 'Todos' ? products : products.filter(p => p.category === category)).map(product => {
@@ -49,14 +55,18 @@ export default function ProductsPage() {
                         return (
                             <Card key={product.id} className="overflow-hidden flex flex-col">
                                 <CardHeader className="p-0">
-                                    <Image
-                                        src={product.imageUrl}
-                                        alt={product.name}
-                                        width={400}
-                                        height={300}
-                                        data-ai-hint={product.hint}
-                                        className="object-cover w-full h-40"
-                                    />
+                  {product.imageUrl ? (
+                    <Image
+                      src={product.imageUrl}
+                      alt={product.name}
+                      width={400}
+                      height={300}
+                      data-ai-hint={product.hint}
+                      className="object-cover w-full h-40"
+                    />
+                  ) : (
+                    <div className="w-full h-40 bg-muted/40 flex items-center justify-center">No Image</div>
+                  )}
                                 </CardHeader>
                                 <CardContent className="p-4 flex-grow">
                                     <h3 className="text-lg font-semibold">{product.name}</h3>

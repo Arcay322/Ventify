@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Product } from '@/types/product';
 import { saveProduct } from '@/services/product-service';
 import { Loader2 } from 'lucide-react';
-import { mockBranches } from '@/lib/mock-data';
+import { getBranches } from '@/services/branch-service';
 import { Label } from './ui/label';
 
 const productSchema = z.object({
@@ -52,10 +52,13 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     
-    const defaultStock = mockBranches.reduce((acc, branch) => {
-        acc[branch.id] = 0;
-        return acc;
-    }, {} as Record<string, number>);
+    const [branches, setBranches] = useState([]);
+    const defaultStock = useMemo(() => {
+        return (branches as any).reduce((acc: any, branch: any) => {
+            acc[branch.id] = 0;
+            return acc;
+        }, {} as Record<string, number>);
+    }, [branches]);
 
     const form = useForm<ProductFormValues>({
         resolver: zodResolver(productSchema),
@@ -71,10 +74,11 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
     });
 
     useEffect(() => {
+        // When opening the modal, or when branches change, ensure stock keys exist
         if (isOpen) {
             if (product) {
                 // Si estamos editando, llenamos con los datos del producto
-                const stockValues = mockBranches.reduce((acc, branch) => {
+                const stockValues = (branches as any).reduce((acc: any, branch: any) => {
                     acc[branch.id] = product.stock[branch.id] || 0;
                     return acc;
                 }, {} as Record<string, number>);
@@ -101,7 +105,26 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
                 });
             }
         }
-    }, [isOpen, product, form, defaultStock]);
+    }, [isOpen, product, form, branches]);
+
+    // If branches change while modal is open and we're creating a new product,
+    // ensure the form has stock fields for the new branches.
+    useEffect(() => {
+        if (!isOpen || product) return;
+        const current = form.getValues();
+        const newStock = { ...(current.stock || {}) } as Record<string, number>;
+        let changed = false;
+        for (const b of branches as any) {
+            if (typeof newStock[b.id] !== 'number') { newStock[b.id] = 0; changed = true; }
+        }
+        if (changed) form.setValue('stock', newStock);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [branches]);
+
+    useEffect(() => {
+        const unsubscribe = getBranches((b: any) => setBranches(b));
+        return () => unsubscribe();
+    }, []);
 
     const onSubmit = async (data: ProductFormValues) => {
         setLoading(true);
@@ -174,7 +197,7 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
                         <div>
                             <Label className="mb-3 block">Stock Inicial por Sucursal</Label>
                             <div className="space-y-2 rounded-md border p-4">
-                                {mockBranches.map((branch) => (
+                                {(branches as any).map((branch: any) => (
                                      <FormField
                                         key={branch.id}
                                         control={form.control}

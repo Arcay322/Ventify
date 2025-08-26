@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 // Configuración a través de variables de entorno.
 // Se espera que las variables estén prefijadas con NEXT_PUBLIC_ para su uso en el cliente
@@ -21,8 +22,25 @@ if (!firebaseConfig.projectId) {
   console.warn('Firebase no está completamente configurado. Revisa las variables de entorno.');
 }
 
-// Inicializar Firebase
+// Validación de configuración mínima
+const requiredKeys = [
+  { key: 'apiKey', env: 'NEXT_PUBLIC_FIREBASE_API_KEY or FIREBASE_API_KEY' },
+  { key: 'projectId', env: 'NEXT_PUBLIC_FIREBASE_PROJECT_ID or FIREBASE_PROJECT_ID' },
+  { key: 'appId', env: 'NEXT_PUBLIC_FIREBASE_APP_ID or FIREBASE_APP_ID' },
+];
+
+const missing = requiredKeys.filter(r => !firebaseConfig[r.key as keyof typeof firebaseConfig]);
+if (missing.length) {
+  const missingList = missing.map(m => m.env).join(', ');
+  throw new Error(
+    `Firebase no está configurado correctamente. Faltan variables: ${missingList}. ` +
+    `Rellena .env.local basado en .env.example y reinicia el servidor.`
+  );
+}
+
+// Inicializar Firebase (ya que la validación pasó)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
+const auth = getAuth(app);
 
-export { app, db };
+export { app, db, auth };

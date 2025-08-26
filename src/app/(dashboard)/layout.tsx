@@ -35,6 +35,8 @@ import {
   Users2,
 } from "lucide-react";
 import React from "react";
+import { AuthProvider, useAuth } from '@/hooks/use-auth';
+import { logout } from '@/services/auth-service';
 
 const navItems = [
   { href: "/dashboard", label: "Panel", icon: LayoutGrid },
@@ -59,7 +61,36 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
 
+  const FooterAccount = () => {
+    const { userDoc, user } = useAuth() as any;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+            <SidebarMenuButton className="w-full justify-start h-auto text-left">
+                <UserCircle className="w-8 h-8" />
+                <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium">{userDoc?.displayName || user?.email || 'Usuario'}</span>
+                    <span className="text-xs text-muted-foreground">{userDoc?.role || 'sin rol'}</span>
+                </div>
+            </SidebarMenuButton>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="mb-2 w-56">
+            <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+                <Link href="/settings">
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Configuración</span>
+                </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={async () => { await logout(); window.location.href = '/auth/login'; }}>Salir</DropdownMenuItem>
+        </DropdownMenuContent>
+       </DropdownMenu>
+    );
+  }
+
   return (
+    <AuthProvider>
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader>
@@ -104,28 +135,7 @@ export default function DashboardLayout({
           ))}
         </SidebarMenu>
         <SidebarFooter>
-           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <SidebarMenuButton className="w-full justify-start h-auto text-left">
-                    <UserCircle className="w-8 h-8" />
-                    <div className="flex flex-col items-start">
-                        <span className="text-sm font-medium">Admin</span>
-                        <span className="text-xs text-muted-foreground">admin@ventify.com</span>
-                    </div>
-                </SidebarMenuButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="mb-2 w-56">
-                <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                    <Link href="/settings">
-                        <Settings className="mr-2 h-4 w-4" />
-                        <span>Configuración</span>
-                    </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem>Salir</DropdownMenuItem>
-            </DropdownMenuContent>
-           </DropdownMenu>
+          <FooterAccount />
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
@@ -134,5 +144,6 @@ export default function DashboardLayout({
         </div>
       </SidebarInset>
     </SidebarProvider>
+    </AuthProvider>
   );
 }

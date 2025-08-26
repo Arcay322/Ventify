@@ -13,14 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Zap } from "lucide-react";
 import { analyzeReorderingRequirements, AnalyzeReorderingRequirementsOutput } from '@/ai/flows/inventory-reordering';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import type { Product } from '@/types/product';
 
-type ProductForReorder = {
-  id: string;
-  name: string;
-  stock: number; // Acepta el stock total aquí
-};
-
-export function ReorderModal({ product, isOpen, onOpenChange }: { product: ProductForReorder | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
+export function ReorderModal({ product, isOpen, onOpenChange }: { product: Product | null, isOpen: boolean, onOpenChange: (open: boolean) => void }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalyzeReorderingRequirementsOutput | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +33,11 @@ export function ReorderModal({ product, isOpen, onOpenChange }: { product: Produ
         { week: 4, sales: Math.floor(Math.random() * 20) + 10 },
       ]);
 
+      const currentStockLevel = product ? Object.values(product.stock || {}).reduce((a, b) => a + b, 0) : 0;
+
       const res = await analyzeReorderingRequirements({
-        productId: product.id,
-        currentStockLevel: product.stock, // Usa el stock total que se le pasa
+        productId: product?.id || '',
+        currentStockLevel,
         historicalSalesData: historicalSalesData,
         leadTimeDays: 7,
       });

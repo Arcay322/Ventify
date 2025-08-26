@@ -1,16 +1,16 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Edit } from "lucide-react";
 import { CustomerModal } from '@/components/customer-modal';
 import type { Customer } from '@/types/customer';
-import { mockCustomers } from '@/lib/mock-data';
+import { getCustomers, saveCustomer } from '@/services/customer-service';
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>(mockCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -19,11 +19,20 @@ export default function CustomersPage() {
     setIsModalOpen(true);
   }
 
-  // This function would be implemented with the database service
-  const handleSaveCustomer = (customer: Customer) => {
-    // Logic for saving would be here
-    console.log("Saving customer (simulated):", customer);
+  const handleSaveCustomer = async (customer: Customer) => {
+    try {
+      await saveCustomer(customer);
+      setIsModalOpen(false);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Error saving customer:', err);
+    }
   };
+
+  useEffect(() => {
+    const unsubscribe = getCustomers(setCustomers);
+    return () => unsubscribe();
+  }, []);
 
   return (
     <div className="flex flex-col gap-8">

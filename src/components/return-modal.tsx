@@ -17,6 +17,9 @@ import { Button } from "@/components/ui/button";
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { Sale } from '@/types/sale';
+import { applyAdjustments } from '@/services/inventory-service';
+import { db } from '@/lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import { Separator } from './ui/separator';
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
@@ -51,17 +54,28 @@ export function ReturnModal({ sale, isOpen, onOpenChange }: ReturnModalProps) {
       return;
     }
 
-    // Simular el proceso de devolución
-    console.log("Processing return for sale:", sale.id);
-    console.log("Items to return:", itemsToReturn);
-    console.log("Returning stock to branch:", sale.branchId);
+    try {
+      // Build adjustments (positive to increase stock)
+      const adjustments = itemsToReturn.map(item => ({ productId: item.id, branchId: sale.branchId, delta: Number(item.quantity) }));
+      await applyAdjustments(adjustments);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    toast({
-      title: "Devolución Procesada",
-      description: `Se ha generado una nota de crédito y se ha devuelto el stock.`,
-    });
+      // Create a credit record for auditing
+      await addDoc(collection(db, 'credits'), {
+        saleId: sale.id,
+        branchId: sale.branchId,
+        items: itemsToReturn.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, amount: i.price * i.quantity })),
+        total: itemsToReturn.reduce<number>((a, b) => a + b.price * b.quantity, 0),
+        createdAt: Date.now(),
+      });
+
+      toast({
+        title: "Devolución Procesada",
+        description: `Se ha generado una nota de crédito y se ha devuelto el stock.`,
+      });
+    } catch (err: any) {
+      console.error('Return processing failed', err);
+      toast({ title: 'Error', description: err.message || 'Error procesando devolución', variant: 'destructive' });
+    }
     setLoading(false);
     onOpenChange(false);
   };

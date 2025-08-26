@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from '@/components/ui/badge';
 import { mockBranches } from '@/lib/mock-data';
+import { ProtectedAdmin } from '@/hooks/use-auth';
+import { getUsers, saveUser, deleteUser } from '@/services/user-service';
 
 const mockUsers: User[] = [
   {
@@ -46,9 +48,14 @@ const mockUsers: User[] = [
 ];
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>(mockUsers);
+  const [users, setUsers] = useState<User[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const unsub = getUsers(setUsers);
+    return () => unsub();
+  }, []);
 
   const handleOpenModal = (user: User | null) => {
     setSelectedUser(user);
@@ -56,14 +63,13 @@ export default function UsersPage() {
   }
 
   // This function would be implemented with the database service
-  const handleSaveUser = (user: User) => {
-    // Logic for saving would be here
-    console.log("Saving user (simulated):", user);
+  const handleSaveUser = async (user: User) => {
+    await saveUser(user as any);
+    setIsModalOpen(false);
   };
 
-  const handleDeleteUser = (userId: string) => {
-    // Logic for deleting would be here
-    console.log("Deleting user (simulated):", userId);
+  const handleDeleteUser = async (userId: string) => {
+    await deleteUser(userId);
   }
   
   const getBranchName = (branchId: string) => {
@@ -71,6 +77,7 @@ export default function UsersPage() {
   }
 
   return (
+    <ProtectedAdmin fallback={<div className="p-6">Acceso denegado</div>}>
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h1>
@@ -144,5 +151,6 @@ export default function UsersPage() {
         onSave={handleSaveUser}
       />
     </div>
+    </ProtectedAdmin>
   )
 }
