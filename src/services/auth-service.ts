@@ -9,7 +9,16 @@ export const signup = async (email: string, password: string, displayName?: stri
   const user = cred.user;
   // Mirror profile in users collection for roles and metadata
   const userRef = doc(db, USERS_COLLECTION, user.uid);
-  await setDoc(userRef, { email: user.email, displayName: displayName || user.displayName || null, role, branchId, createdAt: Date.now() });
+  // Avoid writing undefined fields to Firestore (Firestore rejects undefined values)
+  const payload: { [k: string]: any } = {
+    email: user.email,
+    displayName: displayName || user.displayName || null,
+    role,
+    createdAt: Date.now(),
+  };
+  if (branchId !== undefined && branchId !== null) payload.branchId = branchId;
+
+  await setDoc(userRef, payload);
   return user;
 };
 

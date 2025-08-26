@@ -20,6 +20,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { getProducts } from '@/services/product-service';
 import { getBranches } from '@/services/branch-service';
 import { getSales, saveSale } from '@/services/sales-service';
+import { useAuth } from '@/hooks/use-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
@@ -32,6 +33,7 @@ const mockSales: Sale[] = [];
 
 
 export default function SalesPage() {
+    const authState = useAuth();
     const [products, setProducts] = useState<Product[]>([]);
     const [cart, setCart] = useState<CartItem[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -50,9 +52,10 @@ export default function SalesPage() {
     const [transactionSearch, setTransactionSearch] = useState('');
 
     useEffect(() => {
-        const unsubProd = getProducts(setProducts);
-        const unsubSales = getSales(setSalesHistory);
-        const unsubBranches = getBranches(setBranches);
+    const accountId = authState.userDoc?.accountId as string | undefined;
+    const unsubProd = getProducts(setProducts, accountId);
+    const unsubSales = getSales(setSalesHistory, accountId);
+    const unsubBranches = getBranches(setBranches, accountId);
         return () => {
             unsubProd();
             unsubSales();

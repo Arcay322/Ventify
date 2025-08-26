@@ -92,6 +92,7 @@ export default function DashboardLayout({
   return (
     <AuthProvider>
     <SidebarProvider>
+  <AuthGuard />
       <Sidebar>
         <SidebarHeader>
           <div className="flex items-center justify-between">
@@ -146,4 +147,16 @@ export default function DashboardLayout({
     </SidebarProvider>
     </AuthProvider>
   );
+}
+
+function AuthGuard() {
+  const { uid, initialized } = useAuth() as any;
+  const router = require('next/navigation').useRouter();
+  React.useEffect(() => {
+    // if auth has initialized and there's no uid, redirect to login
+    if (initialized && !uid) {
+      router.push('/auth/login');
+    }
+  }, [initialized, uid]);
+  return null;
 }

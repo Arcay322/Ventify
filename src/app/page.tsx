@@ -20,10 +20,10 @@ export default function LandingPage() {
               Precios
             </Link>
             <Button asChild variant="outline">
-              <Link href="/dashboard">Iniciar Sesión</Link>
+              <Link href="/auth/login">Iniciar Sesión</Link>
             </Button>
             <Button asChild style={{ backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }}>
-              <Link href="/dashboard">Comenzar</Link>
+              <Link href="/auth/signup">Comenzar</Link>
             </Button>
           </nav>
           <Button className="md:hidden" variant="ghost" size="icon" aria-label="Abrir menú">
@@ -43,7 +43,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-8 flex justify-center gap-4">
               <Button asChild size="lg" style={{ backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }}>
-                <Link href="/dashboard">Comienza Prueba Gratis</Link>
+                <Link href="/auth/signup">Comienza Prueba Gratis</Link>
               </Button>
               <Button asChild size="lg" variant="outline">
                 <Link href="#features">Saber Más</Link>

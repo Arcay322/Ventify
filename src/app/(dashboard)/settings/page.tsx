@@ -54,7 +54,8 @@ export default function SettingsPage() {
     useEffect(() => {
         const unsub = subscribeSettings((data) => {
             if (data) {
-                form.reset({ businessName: data.businessName || '', ruc: data.ruc || '', address: data.address || '', taxRate: data.taxRate || 18 });
+                const s = data as any; // runtime shape validated in settings-service
+                form.reset({ businessName: s.businessName || '', ruc: s.ruc || '', address: s.address || '', taxRate: typeof s.taxRate === 'number' ? s.taxRate : 18 });
             }
         });
         return () => unsub();

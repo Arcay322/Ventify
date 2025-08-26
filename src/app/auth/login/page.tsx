@@ -15,7 +15,7 @@ export default function LoginPage() {
     try {
       await login(email, password);
       toast({ title: 'Sesión iniciada' });
-      router.push('/');
+  router.push('/dashboard');
     } catch (err: any) {
       toast({ title: 'Error', description: err.message || 'No se pudo iniciar sesión', variant: 'destructive' });
     }

@@ -1,7 +1,8 @@
 import { db } from '@/lib/firebase';
 import { Sale } from '@/types/sale';
-import { collection, onSnapshot, addDoc, DocumentData, QueryDocumentSnapshot, runTransaction, doc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, DocumentData, QueryDocumentSnapshot, QuerySnapshot, runTransaction, doc, DocumentReference, query, where } from 'firebase/firestore';
 import { applyAdjustments } from './inventory-service';
+import { Product } from '@/types/product';
 
 const SALES_COLLECTION = 'sales';
 
@@ -20,41 +21,53 @@ const saleFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Sale => {
   } as Sale;
 };
 
-export const getSales = (callback: (sales: Sale[]) => void) => {
+export const getSales = (callback: (sales: Sale[]) => void, accountId?: string) => {
   const salesCollection = collection(db, SALES_COLLECTION);
-  const unsubscribe = onSnapshot(salesCollection, (snapshot) => {
-    const sales = snapshot.docs.map(saleFromDoc).sort((a, b) => (b.date || 0) - (a.date || 0));
+  const q = accountId ? query(salesCollection, where('accountId', '==', accountId)) : salesCollection;
+  const unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
+    const sales = snapshot.docs.map(saleFromDoc).sort((a: Sale, b: Sale) => (b.date || 0) - (a.date || 0));
     callback(sales);
   });
   return unsubscribe;
 };
 
+type Adjustment = { productId: string; branchId: string; delta: number };
+
 export const saveSale = async (sale: Partial<Sale>) => {
   // Persist the sale and decrement stock per item in a transaction
   return runTransaction(db, async (tx) => {
-    // Create sale doc
+    // Prepare sale ref and data (we'll write it after validating stock)
     const saleRef = doc(collection(db, SALES_COLLECTION));
     const saleData = { ...sale } as any;
-    tx.set(saleRef, saleData);
 
     // Build adjustments: decrement quantity per product for the given branch
     const branchId = sale.branchId as string;
-    const adjustments = (sale.items || []).map((it: any) => ({ productId: it.id, branchId, delta: -Math.abs(it.quantity) }));
+  const adjustments: Adjustment[] = (sale.items || []).map((it: any) => ({ productId: (it as Product).id, branchId, delta: -Math.abs((it as any).quantity) }));
 
-    // Apply adjustments using the same transaction context by reading/updating product docs
-    for (const adj of adjustments) {
-      const prodRef = doc(db, 'products', adj.productId);
-      const prodSnap = await tx.get(prodRef);
-      if (!prodSnap.exists()) throw new Error('Product not found: ' + adj.productId);
-      const data: any = prodSnap.data();
-      const stock = data.stock || {};
-      const prev = typeof stock[adj.branchId] === 'number' ? stock[adj.branchId] : 0;
+    // Perform all reads first to validate stock levels
+  const prodRefs: DocumentReference[] = adjustments.map(adj => doc(db, 'products', adj.productId));
+  const snaps = await Promise.all(prodRefs.map(r => tx.get(r)));
+
+  const updates: { ref: DocumentReference; data: Partial<Product> }[] = [];
+    for (let i = 0; i < adjustments.length; i++) {
+      const adj = adjustments[i];
+      const snap = snaps[i];
+      if (!snap.exists()) throw new Error('Product not found: ' + adj.productId);
+  const data: any = snap.data();
+  const stock: Record<string, number> = data.stock || {};
+  const prev = typeof stock[adj.branchId] === 'number' ? stock[adj.branchId] : 0;
       const next = prev + adj.delta;
       if (next < 0) throw new Error('Insufficient stock for product ' + adj.productId + ' in branch ' + adj.branchId);
       const newStock = { ...stock, [adj.branchId]: next };
-      tx.update(prodRef, { stock: newStock });
+  updates.push({ ref: prodRefs[i], data: { stock: newStock } });
     }
 
+    // All reads are done; now perform writes (product stock updates, then sale)
+    for (const u of updates) {
+      tx.update(u.ref, u.data);
+    }
+
+    tx.set(saleRef, saleData);
     return saleRef.id;
   });
 };

@@ -4,26 +4,28 @@ import { onAuthChange } from '@/services/auth-service';
 import { auth } from '@/lib/firebase';
 import { subscribeUserDoc } from '@/services/auth-service';
 
-type AuthState = { uid?: string | null; user?: any | null; userDoc?: any | null };
+type UserDoc = { id?: string; role?: 'owner' | 'admin' | 'cashier' | 'user'; [key: string]: unknown } | null;
+type AuthState = { initialized?: boolean; uid?: string | null; user?: { uid?: string; email?: string; displayName?: string } | null; userDoc?: UserDoc };
 
 const AuthContext = React.createContext<{ state: AuthState }>({ state: {} });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [state, setState] = React.useState<AuthState>({});
+  const [state, setState] = React.useState<AuthState>({ initialized: false });
 
-  React.useEffect(() => {
+    React.useEffect(() => {
+    let cleanupUserDoc: (() => void) | null = null;
     const unsub = onAuthChange((u) => {
       if (u) {
-        setState(s => ({ ...s, uid: u.uid, user: { uid: u.uid, email: u.email, displayName: u.displayName } }));
-        const unsubDoc = subscribeUserDoc(u.uid, (doc) => setState(s => ({ ...s, userDoc: doc })));
-        // keep user doc subscription until sign out
-        (unsub as any).cleanup = unsubDoc;
+        setState(s => ({ ...s, initialized: true, uid: u.uid, user: { uid: u.uid, email: u.email ?? undefined, displayName: u.displayName ?? undefined } }));
+        cleanupUserDoc = subscribeUserDoc(u.uid, (doc) => setState(s => ({ ...s, userDoc: doc })));
       } else {
-        setState({});
+        // cleanup previous subscription
+        if (cleanupUserDoc) { cleanupUserDoc(); cleanupUserDoc = null; }
+        setState({ initialized: true });
       }
     });
     return () => {
-      if ((unsub as any).cleanup) (unsub as any).cleanup();
+      if (cleanupUserDoc) cleanupUserDoc();
       unsub();
     };
   }, []);

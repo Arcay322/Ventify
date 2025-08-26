@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/use-auth';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Edit, Trash2 } from "lucide-react";
 import { UserModal } from '@/components/user-modal';
@@ -18,10 +22,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Badge } from '@/components/ui/badge';
 import { mockBranches } from '@/lib/mock-data';
 import { ProtectedAdmin } from '@/hooks/use-auth';
 import { getUsers, saveUser, deleteUser } from '@/services/user-service';
+import { auth } from '@/lib/firebase';
 
 const mockUsers: User[] = [
   {
@@ -51,11 +55,29 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [accountCounts, setAccountCounts] = useState<{ admins?: number; workers?: number } | null>(null);
+  const [accountLimits, setAccountLimits] = useState<{ admins?: number; workers?: number } | null>(null);
+  const authState = useAuth();
 
   useEffect(() => {
-    const unsub = getUsers(setUsers);
+    const accountIdParam = authState.userDoc?.accountId as string | undefined;
+    const unsub = getUsers(setUsers, accountIdParam);
     return () => unsub();
-  }, []);
+  }, [authState.userDoc]);
+
+  // subscribe to account document to show used/available seats
+  useEffect(() => {
+    const accountId = authState.userDoc?.accountId;
+    if (!accountId) return;
+  const ref = doc(db as any, 'accounts', accountId as string);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return setAccountCounts(null);
+      const data = snap.data() as any;
+      setAccountCounts(data.counts || { admins: 0, workers: 0 });
+      setAccountLimits(data.limits || { admins: 1, workers: 4 });
+    });
+    return () => unsub();
+  }, [authState.userDoc]);
 
   const handleOpenModal = (user: User | null) => {
     setSelectedUser(user);
@@ -69,7 +91,27 @@ export default function UsersPage() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    await deleteUser(userId);
+    try {
+      // call server endpoint to safely delete user and decrement account counts
+      const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+      if (!idToken) throw new Error('Not authenticated');
+      const createUrl = (process.env.NEXT_PUBLIC_CREATE_USER_FN_URL as string) || (window && (window as any).NEXT_PUBLIC_CREATE_USER_FN_URL) || '';
+      if (!createUrl) throw new Error('Create user function URL not configured');
+      const deleteUrl = createUrl.replace(/createUserForAccount$/, 'deleteUserForAccount');
+      const r = await fetch(deleteUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ uid: userId }),
+      });
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error(txt || `Server returned ${r.status}`);
+      }
+    } catch (e) {
+      console.error('delete user error', e);
+      // fallback: delete locally if server fails
+      try { await deleteUser(userId); } catch (e) { console.error('fallback delete failed', e); }
+    }
   }
   
   const getBranchName = (branchId: string) => {
@@ -81,9 +123,17 @@ export default function UsersPage() {
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h1>
-        <Button style={{ backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }} onClick={() => handleOpenModal(null)}>
-          <PlusCircle className="mr-2 h-4 w-4" /> Agregar Usuario
-        </Button>
+        <div className="flex items-center gap-4">
+          {accountCounts && accountLimits && (
+            <div className="text-sm text-muted-foreground">
+              <span className="mr-2">Asientos:</span>
+              <Badge variant="secondary">{(accountCounts.workers||0) + (accountCounts.admins||0)} / {(accountLimits.workers||0) + (accountLimits.admins||0)}</Badge>
+            </div>
+          )}
+          <Button style={{ backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }} onClick={() => handleOpenModal(null)}>
+            <PlusCircle className="mr-2 h-4 w-4" /> Agregar Usuario
+          </Button>
+        </div>
       </div>
 
       <Card>

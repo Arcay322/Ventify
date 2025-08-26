@@ -10,10 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductModal } from '@/components/product-modal';
 import type { Product } from '@/types/product';
 import { getProducts } from '@/services/product-service';
+import { useAuth } from '@/hooks/use-auth';
 import { mockCategories } from '@/lib/mock-data';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const authState = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -27,7 +29,8 @@ export default function ProductsPage() {
   }
 
   useEffect(() => {
-    const unsubscribe = getProducts(setProducts);
+  const accountId = authState.userDoc?.accountId as string | undefined;
+  const unsubscribe = getProducts(setProducts, accountId);
     return () => unsubscribe();
   }, []);
 

@@ -1,37 +1,40 @@
 import { db } from '@/lib/firebase';
 import { CashRegisterSession } from '@/types/cash-register';
-import { collection, addDoc, onSnapshot, query, where, limit, getDocs, doc, updateDoc, serverTimestamp, Timestamp, increment, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, limit, getDocs, doc, updateDoc, serverTimestamp, Timestamp, increment, getDoc, writeBatch, runTransaction } from 'firebase/firestore';
 
 const CASH_REGISTER_COLLECTION = 'cash_register_sessions';
 
-export const createCashRegisterSession = async (initialAmount: number): Promise<boolean> => {
-    const activeSessionQuery = query(
-        collection(db, CASH_REGISTER_COLLECTION), 
-        where('status', '==', 'open'), 
-        limit(1)
-    );
-
+/**
+ * Create a cash register session for a specific branch.
+ * Uses a deterministic document id `active_{branchId}` to ensure only one active session per branch.
+ */
+export const createCashRegisterSession = async (branchId: string, initialAmount: number): Promise<boolean> => {
+    const activeId = `active_${branchId}`;
+    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, activeId);
     try {
-        const activeSessionSnapshot = await getDocs(activeSessionQuery);
-        if (!activeSessionSnapshot.empty) {
-            console.error("Attempted to create a session, but one is already active.");
-            return false; // Indicate failure due to existing session
-        }
-
-        const sessionData = {
-            initialAmount,
-            openTime: serverTimestamp(),
-            status: 'open',
-            totalSales: 0,
-            cashSales: 0,
-            cardSales: 0,
-            digitalSales: 0,
-        };
-        await addDoc(collection(db, CASH_REGISTER_COLLECTION), sessionData);
-        return true; // Indicate success
+        return await runTransaction(db, async (tx) => {
+            const snap = await tx.get(sessionRef);
+            if (snap.exists() && snap.data()?.status === 'open') {
+                // Already active for this branch
+                return false;
+            }
+            const sessionData = {
+                id: activeId,
+                branchId,
+                initialAmount,
+                openTime: serverTimestamp(),
+                status: 'open',
+                totalSales: 0,
+                cashSales: 0,
+                cardSales: 0,
+                digitalSales: 0,
+            } as any;
+            tx.set(sessionRef, sessionData);
+            return true;
+        });
     } catch (error) {
-        console.error("Error creating cash register session in Firestore:", error);
-        return false; // Indicate failure
+        console.error('Error creating cash register session in Firestore:', error);
+        return false;
     }
 };
 
@@ -81,17 +84,12 @@ export const getActiveCashRegisterSession = (callback: (session: CashRegisterSes
     return unsubscribe;
 };
 
-export const addSaleToActiveSession = async (sale: { total: number; paymentMethod: string }) => {
-    const q = query(
-        collection(db, CASH_REGISTER_COLLECTION), 
-        where('status', '==', 'open'), 
-        limit(1)
-    );
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) {
-        throw new Error("No hay una sesión de caja activa para registrar la venta.");
+export const addSaleToActiveSession = async (branchId: string, sale: { total: number; paymentMethod: string }) => {
+    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, `active_${branchId}`);
+    const sessionSnap = await getDoc(sessionRef);
+    if (!sessionSnap.exists() || sessionSnap.data()?.status !== 'open') {
+        throw new Error('No hay una sesión de caja activa para registrar la venta.');
     }
-    const sessionRef = snapshot.docs[0].ref;
     
     const updateData: { [key: string]: any } = {
         totalSales: increment(sale.total)

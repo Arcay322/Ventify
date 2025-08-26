@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Cash register sessions: active_{branchId} must be created only if not exists
+    match /cash_register_sessions/{sessionId} {
+      allow read: if true; // allow reads for tests/clients; tighten in production
+
+      // Creation: only allowed if the doc id starts with active_ and doesn't already exist
+      allow create: if isActiveId(sessionId) && request.resource.data.status == 'open' && !exists(/databases/$(database)/documents/cash_register_sessions/$(sessionId));
+
+      // Update: allow if the session is already open (for adding sales) or closing if the caller is authenticated
+      allow update: if isActiveId(sessionId) && resource.data.status == 'open' && (
+        // allow adding sales fields
+        ((request.resource.data.totalSales is number) || (request.resource.data.cashSales is number) || (request.resource.data.cardSales is number) || (request.resource.data.digitalSales is number))
+        || (request.resource.data.status == 'closed' && request.auth != null)
+      );
+
+      // Deletion: disallow from clients
+      allow delete: if false;
+    }
+
+    // Users collection: disallow client-side creation of user docs.
+    // User docs must be provisioned via server-side admin APIs (Cloud Function / Admin SDK).
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // creation from client denied; creation must be performed server-side
+      allow create: if false;
+
+      // allow update for the user to update their non-role profile fields
+      allow update: if request.auth != null && request.auth.uid == userId &&
+        // disallow changing sensitive fields like role or accountId from client
+        !(('role' in request.resource.data) || ('accountId' in request.resource.data));
+
+      // admin-only operations (delete or role changes)
+      allow delete: if request.auth != null && request.auth.token.admin == true;
+      allow update: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    function isActiveId(id) {
+      return id.startsWith('active_');
+    }
+  }
+}

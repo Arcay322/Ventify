@@ -10,6 +10,10 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
+  ,
+  "smoke": "node scripts/tests/smoke-saveSale.js && node scripts/tests/smoke-applyAdjustments.js && node scripts/tests/smoke-cash-register.js && node scripts/tests/smoke-users-settings.js && node scripts/tests/smoke-insufficient-stock.js && node scripts/tests/smoke-duplicate-session.js"
+  ,
+  "test:rules": "node --experimental-vm-modules scripts/tests/firestore-rules.test.js"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
@@ -57,6 +61,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "latest",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

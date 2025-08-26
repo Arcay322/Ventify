@@ -52,9 +52,9 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     
-    const [branches, setBranches] = useState([]);
+    const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
     const defaultStock = useMemo(() => {
-        return (branches as any).reduce((acc: any, branch: any) => {
+        return branches.reduce((acc, branch) => {
             acc[branch.id] = 0;
             return acc;
         }, {} as Record<string, number>);
@@ -78,7 +78,7 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
         if (isOpen) {
             if (product) {
                 // Si estamos editando, llenamos con los datos del producto
-                const stockValues = (branches as any).reduce((acc: any, branch: any) => {
+                const stockValues = branches.reduce((acc, branch) => {
                     acc[branch.id] = product.stock[branch.id] || 0;
                     return acc;
                 }, {} as Record<string, number>);
@@ -114,7 +114,7 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
         const current = form.getValues();
         const newStock = { ...(current.stock || {}) } as Record<string, number>;
         let changed = false;
-        for (const b of branches as any) {
+        for (const b of branches) {
             if (typeof newStock[b.id] !== 'number') { newStock[b.id] = 0; changed = true; }
         }
         if (changed) form.setValue('stock', newStock);
@@ -122,7 +122,8 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
     }, [branches]);
 
     useEffect(() => {
-        const unsubscribe = getBranches((b: any) => setBranches(b));
+    const accountId = undefined; // callers should pass account context; defaulting to undefined
+    const unsubscribe = getBranches((b: { id: string; name: string }[]) => setBranches(b), accountId);
         return () => unsubscribe();
     }, []);
 
@@ -197,7 +198,7 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
                         <div>
                             <Label className="mb-3 block">Stock Inicial por Sucursal</Label>
                             <div className="space-y-2 rounded-md border p-4">
-                                {(branches as any).map((branch: any) => (
+                                {branches.map((branch) => (
                                      <FormField
                                         key={branch.id}
                                         control={form.control}

@@ -4,18 +4,25 @@ import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
 const SETTINGS_COLLECTION = 'settings';
 const GLOBAL_DOC = 'global';
 
-export const getSettings = async () => {
+export type Settings = {
+  currency?: string;
+  locale?: string;
+  timezone?: string;
+  [key: string]: unknown;
+}
+
+export const getSettings = async (): Promise<Settings | null> => {
   const ref = doc(db, SETTINGS_COLLECTION, GLOBAL_DOC);
   const snap = await getDoc(ref);
-  return snap.exists() ? snap.data() : null;
+  return snap.exists() ? (snap.data() as Settings) : null;
 };
 
-export const subscribeSettings = (cb: (data: any) => void) => {
+export const subscribeSettings = (cb: (data: Settings | null) => void) => {
   const ref = doc(db, SETTINGS_COLLECTION, GLOBAL_DOC);
-  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
+  return onSnapshot(ref, (snap) => cb(snap.exists() ? (snap.data() as Settings) : null));
 };
 
-export const saveSettings = async (data: any) => {
+export const saveSettings = async (data: Settings) => {
   const ref = doc(db, SETTINGS_COLLECTION, GLOBAL_DOC);
   await setDoc(ref, { ...data, updatedAt: Date.now() }, { merge: true });
 };

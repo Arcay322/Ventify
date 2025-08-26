@@ -31,11 +31,11 @@ export const saveCustomer = async (customer: Partial<Customer> & { id?: string }
   if (customer.id) {
     const customerRef = doc(db, CUSTOMERS_COLLECTION, customer.id);
     const { id, ...customerData } = customer;
-    await updateDoc(customerRef, customerData as any);
+  await updateDoc(customerRef, customerData as Partial<Customer>);
     return customer.id;
   } else {
     const { id, ...customerData } = customer;
-    const docRef = await addDoc(collection(db, CUSTOMERS_COLLECTION), customerData as any);
+  const docRef = await addDoc(collection(db, CUSTOMERS_COLLECTION), customerData as Partial<Customer>);
     return docRef.id;
   }
 };

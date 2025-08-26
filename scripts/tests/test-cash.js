@@ -16,19 +16,17 @@ const db = getFirestore(app);
 
 const CASH_REGISTER_COLLECTION = 'cash_register_sessions';
 
-async function createCashRegisterSession(initialAmount) {
-  const activeQuery = query(collection(db, CASH_REGISTER_COLLECTION), where('status', '==', 'open'), limit(1));
-  const snap = await getDocs(activeQuery);
-  if (!snap.empty) return false;
-  await addDoc(collection(db, CASH_REGISTER_COLLECTION), { initialAmount, openTime: serverTimestamp(), status: 'open', totalSales: 0, cashSales: 0, cardSales: 0, digitalSales: 0 });
+async function createCashRegisterSession(branchId, initialAmount) {
+  const id = `active_${branchId}`;
+  const ref = doc(db, CASH_REGISTER_COLLECTION, id);
+  const snap = await getDoc(ref);
+  if (snap.exists() && snap.data().status === 'open') return false;
+  await setDoc(ref, { id, branchId, initialAmount, openTime: serverTimestamp(), status: 'open', totalSales: 0, cashSales: 0, cardSales: 0, digitalSales: 0 });
   return true;
 }
 
-async function addSaleToActiveSession(sale) {
-  const activeQuery = query(collection(db, CASH_REGISTER_COLLECTION), where('status', '==', 'open'), limit(1));
-  const snap = await getDocs(activeQuery);
-  if (snap.empty) throw new Error('No active session');
-  const ref = snap.docs[0].ref;
+async function addSaleToActiveSession(branchId, sale) {
+  const ref = doc(db, CASH_REGISTER_COLLECTION, `active_${branchId}`);
   const updateData = { totalSales: increment(sale.total) };
   if (sale.paymentMethod === 'Efectivo') updateData.cashSales = increment(sale.total);
   if (sale.paymentMethod === 'Tarjeta') updateData.cardSales = increment(sale.total);
@@ -36,29 +34,26 @@ async function addSaleToActiveSession(sale) {
   await updateDoc(ref, updateData);
 }
 
-async function getActiveSessionOnce() {
-  const activeQuery = query(collection(db, CASH_REGISTER_COLLECTION), where('status', '==', 'open'), limit(1));
-  const snap = await getDocs(activeQuery);
-  if (snap.empty) return null;
-  const d = snap.docs[0];
+async function getActiveSessionOnce(branchId) {
+  const id = `active_${branchId}`;
+  const d = await getDoc(doc(db, CASH_REGISTER_COLLECTION, id));
+  if (!d.exists()) return null;
   return { id: d.id, ...(d.data()) };
 }
 
 async function closeSession(sessionId, countedAmount) {
   const ref = doc(db, CASH_REGISTER_COLLECTION, sessionId);
-  const snap = await getDocs(query(collection(db, CASH_REGISTER_COLLECTION), where('status', '==', 'open'), limit(1)));
-  // compute expected from doc data directly when available
   await updateDoc(ref, { status: 'closed', closeTime: serverTimestamp(), countedAmount, expectedAmount: countedAmount, difference: 0 });
 }
 
 (async () => {
   console.log('Creating session...');
-  const ok = await createCashRegisterSession(50);
+  const ok = await createCashRegisterSession('branch-1', 50);
   console.log('create ->', ok);
   console.log('Sleeping 1s'); await new Promise(r => setTimeout(r, 1000));
-  try { await addSaleToActiveSession({ total: 20, paymentMethod: 'Efectivo' }); console.log('sale added'); } catch (e) { console.error('add sale err', e.message); }
+  try { await addSaleToActiveSession('branch-1', { total: 20, paymentMethod: 'Efectivo' }); console.log('sale added'); } catch (e) { console.error('add sale err', e.message); }
   await new Promise(r => setTimeout(r, 1000));
-  const s = await getActiveSessionOnce();
+  const s = await getActiveSessionOnce('branch-1');
   if (!s) { console.error('no active session found'); process.exit(1); }
   try { await closeSession(s.id, (s.initialAmount||0) + (s.cashSales||0)); console.log('closed OK'); } catch (e) { console.error('close err', e.message); }
   process.exit(0);

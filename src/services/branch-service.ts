@@ -1,6 +1,6 @@
 import { db } from '@/lib/firebase';
 import { Branch } from '@/types/branch';
-import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot, QuerySnapshot, query, where } from 'firebase/firestore';
 
 const BRANCHES_COLLECTION = 'branches';
 
@@ -13,9 +13,10 @@ const branchFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Branch => {
   };
 };
 
-export const getBranches = (callback: (branches: Branch[]) => void) => {
+export const getBranches = (callback: (branches: Branch[]) => void, accountId?: string) => {
   const branchesCollection = collection(db, BRANCHES_COLLECTION);
-  const unsubscribe = onSnapshot(branchesCollection, (snapshot) => {
+  const q = accountId ? query(branchesCollection, where('accountId', '==', accountId)) : branchesCollection;
+  const unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
     const branches = snapshot.docs.map(branchFromDoc);
     callback(branches);
   });
