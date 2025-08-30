@@ -1,6 +1,18 @@
-"use client"
+PS U:\Ventify> node .\scripts\get-user-doc.js ownerUid123
+Querying users/ownerUid123
+users/ownerUid123 -> {
+  "accountId": "acct_001",
+  "role": "owner",
+  "displayName": "Mi Negocio",
+  "email": "owner@example.com",
+  "createdAt": 1756451622063
+}
+PS U:\Ventify> node .\scripts\list-active-sessions.js
+Querying open sessions in cash_register_sessions...
+No open sessions found.
+PS U:\Ventify> "use client"
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -25,7 +37,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import { CashRegisterSession } from '@/types/cash-register';
-import { closeCashRegisterSession } from '@/services/cash-register-service';
+import { closeCashRegisterSession, getMovementsForSession } from '@/services/cash-register-service';
 import { Separator } from './ui/separator';
 
 const closeRegisterSchema = z.object({
@@ -52,7 +64,18 @@ export function CloseRegisterModal({ session, isOpen, onOpenChange }: CloseRegis
     });
 
     const countedAmount = form.watch('countedAmount');
-    const expectedAmount = session.initialAmount + session.cashSales;
+    const [movements, setMovements] = useState<any[]>([]);
+    useEffect(() => {
+        const unsub = getMovementsForSession(session.id, setMovements);
+        return () => { try { unsub(); } catch(e){} };
+    }, [session.id]);
+
+    const otherIncomes = movements.filter(m => m.amount > 0).reduce((s, m) => s + (m.amount || 0), 0);
+    const withdrawals = movements.filter(m => m.amount < 0).reduce((s, m) => s + (m.amount || 0), 0);
+        // Prefer authoritative server-side stored expectedAmount when available to avoid double-counting
+        // (server increments expectedAmount on each movement). If not present, compute locally from components.
+        const computedExpected = (session.initialAmount || 0) + (session.cashSales || 0) + otherIncomes + withdrawals;
+        const expectedAmount = typeof session.expectedAmount === 'number' ? session.expectedAmount : computedExpected;
     const difference = countedAmount - expectedAmount;
 
     const onSubmit = async (data: CloseRegisterFormValues) => {
@@ -105,11 +128,19 @@ export function CloseRegisterModal({ session, isOpen, onOpenChange }: CloseRegis
                          <Separator />
                         <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Monto Inicial</span>
-                            <span>S/{session.initialAmount.toFixed(2)}</span>
+                            <span>S/{(session.initialAmount || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Ventas en Efectivo</span>
-                            <span>+ S/{session.cashSales.toFixed(2)}</span>
+                            <span>+ S/{(session.cashSales || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Otros Ingresos</span>
+                            <span>+ S/{otherIncomes.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Retiros</span>
+                            <span>- S/{Math.abs(withdrawals).toFixed(2)}</span>
                         </div>
                          <Separator />
                         <div className="flex justify-between font-semibold">
@@ -118,8 +149,25 @@ export function CloseRegisterModal({ session, isOpen, onOpenChange }: CloseRegis
                         </div>
                     </div>
 
+                    <div className="mt-2 space-y-2">
+                        <h4 className="text-sm font-semibold">Movimientos de Caja</h4>
+                        <div className="max-h-40 overflow-y-auto border rounded p-2">
+                            {movements.length === 0 ? <div className="text-sm text-muted-foreground">No hay movimientos registrados.</div> : (
+                                movements.map(m => (
+                                    <div key={m.id} className="flex justify-between text-sm py-1 border-b last:border-b-0">
+                                        <div>
+                                            <div className="font-medium">{m.reason || (m.amount>0 ? 'Ingreso' : 'Retiro')}</div>
+                                            <div className="text-xs text-muted-foreground">{m.createdAt ? new Date(m.createdAt.seconds * 1000).toLocaleString() : ''}</div>
+                                        </div>
+                                        <div className={`font-semibold ${m.amount < 0 ? 'text-destructive' : ''}`}>S/{m.amount.toFixed(2)}</div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
                      <Form {...form}>
-                        <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
+                        <form id="close-register-form" onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
                             <FormField
                                 control={form.control}
                                 name="countedAmount"

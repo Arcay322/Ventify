@@ -40,6 +40,14 @@ if (missing.length) {
 
 // Inicializar Firebase (ya que la validación pasó)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+// Debug: log projectId at client runtime so we can confirm which Firebase project the browser is using.
+// This will print in the browser console during development (NEXT_PUBLIC vars must be set).
+try {
+  // eslint-disable-next-line no-console
+  if (typeof window !== 'undefined') console.debug('debug: firebase projectId (client):', firebaseConfig.projectId);
+} catch (e) {
+  // ignore
+}
 const db = getFirestore(app);
 const auth = getAuth(app);
 

@@ -29,6 +29,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { Product } from '@/types/product';
 import { getBranches } from '@/services/branch-service';
+import { useAuth } from '@/hooks/use-auth';
 import { Label } from './ui/label';
 
 // El schema ahora valida un objeto de stocks
@@ -61,10 +62,12 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
         }
     }, [isOpen, product, form]);
 
+    const authState = useAuth();
     useEffect(() => {
-        const unsub = getBranches((b: any) => setBranches(b));
-        return () => unsub();
-    }, []);
+        const accountId = authState.userDoc?.accountId as string | undefined;
+        const unsub = getBranches((b: any) => setBranches(b), accountId);
+        return () => { try { unsub(); } catch (e) {} };
+    }, [authState.userDoc?.accountId]);
 
     const onSubmit = async (data: AdjustmentFormValues) => {
         if (!product) return;

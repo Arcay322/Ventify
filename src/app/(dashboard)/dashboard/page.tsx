@@ -9,9 +9,10 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { mockBranches } from "@/lib/mock-data";
+// mock-data removed; dashboard now relies on real branches from Firestore
 import { getBranches } from '@/services/branch-service';
 import { getSales } from '@/services/sales-service';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
@@ -51,11 +52,13 @@ export default function DashboardPage() {
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const { toast } = useToast();
 
+  const authState = useAuth();
   useEffect(() => {
-    const unsub = getBranches(setBranches);
-    const unsubSales = getSales((s) => setSales(s));
-    return () => { unsub(); unsubSales(); };
-  }, []);
+    const accountId = authState.userDoc?.accountId as string | undefined;
+    const unsub = getBranches(setBranches, accountId);
+    const unsubSales = getSales((s) => setSales(s), accountId);
+    return () => { try { unsub(); } catch(e){}; try { unsubSales(); } catch(e){} };
+  }, [authState.userDoc?.accountId]);
 
   useEffect(() => {
     // Recompute KPIs when sales or selectedBranch change
@@ -132,7 +135,7 @@ export default function DashboardPage() {
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="all">Todas las Sucursales</SelectItem>
-            {(branches.length ? branches : mockBranches).map(branch => (
+            {branches.map(branch => (
               <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
             ))}
                     </SelectContent>

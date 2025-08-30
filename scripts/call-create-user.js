@@ -33,8 +33,10 @@ if (!ADMIN_EMAIL || !ADMIN_PASSWORD || !FUNCTION_URL) {
     const body = {
       accountId: process.env.ACCOUNT_ID || 'account-demo',
       email: process.env.NEW_USER_EMAIL || `new+${Date.now()}@example.com`,
-      password: process.env.NEW_USER_PASSWORD || 'Test1234!',
-      role: process.env.NEW_USER_ROLE || 'worker'
+  password: process.env.NEW_USER_PASSWORD || 'Test1234!',
+  role: process.env.NEW_USER_ROLE || 'worker',
+  name: process.env.NEW_USER_NAME || `Test User ${Date.now()}`,
+  branchId: process.env.NEW_USER_BRANCHID || process.env.NEW_USER_BRANCH_ID || null,
     };
 
     const r = await fetch(FUNCTION_URL, {

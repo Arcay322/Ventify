@@ -27,6 +27,7 @@ import type { Product } from '@/types/product';
 import { saveProduct } from '@/services/product-service';
 import { Loader2 } from 'lucide-react';
 import { getBranches } from '@/services/branch-service';
+import { useAuth } from '@/hooks/use-auth';
 import { Label } from './ui/label';
 
 const productSchema = z.object({
@@ -121,11 +122,12 @@ export function ProductModal({ product, isOpen, onOpenChange }: ProductModalProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [branches]);
 
+    const authState = useAuth();
     useEffect(() => {
-    const accountId = undefined; // callers should pass account context; defaulting to undefined
+    const accountId = authState.userDoc?.accountId as string | undefined;
     const unsubscribe = getBranches((b: { id: string; name: string }[]) => setBranches(b), accountId);
-        return () => unsubscribe();
-    }, []);
+        return () => { try { unsubscribe(); } catch (e) {} };
+    }, [authState.userDoc?.accountId]);
 
     const onSubmit = async (data: ProductFormValues) => {
         setLoading(true);

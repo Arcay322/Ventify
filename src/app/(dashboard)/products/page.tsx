@@ -11,7 +11,6 @@ import { ProductModal } from '@/components/product-modal';
 import type { Product } from '@/types/product';
 import { getProducts } from '@/services/product-service';
 import { useAuth } from '@/hooks/use-auth';
-import { mockCategories } from '@/lib/mock-data';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -31,8 +30,15 @@ export default function ProductsPage() {
   useEffect(() => {
   const accountId = authState.userDoc?.accountId as string | undefined;
   const unsubscribe = getProducts(setProducts, accountId);
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe && unsubscribe();
+  }, [authState.userDoc?.accountId]);
+
+  const categories = useMemo(() => {
+    const set = new Set(products.map(p => p.category).filter(Boolean));
+    const arr = Array.from(set);
+    if (!arr.includes('Todos')) arr.unshift('Todos');
+    return arr;
+  }, [products]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -44,13 +50,13 @@ export default function ProductsPage() {
       </div>
 
       <Tabs defaultValue="Todos" className="w-full">
-    <TabsList className="grid w-full grid-cols-4 mb-4">
-      {(mockCategories.length ? mockCategories : Array.from(new Set(products.map(p => p.category))).concat(['Todos'])).map(category => (
+      <TabsList className="grid w-full grid-cols-4 mb-4">
+      {categories.map(category => (
         <TabsTrigger key={category} value={category}>{category}</TabsTrigger>
       ))}
     </TabsList>
         
-    {(mockCategories.length ? mockCategories : Array.from(new Set(products.map(p => p.category))).concat(['Todos'])).map(category => (
+    {categories.map(category => (
             <TabsContent key={category} value={category}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                     {(category === 'Todos' ? products : products.filter(p => p.category === category)).map(product => {

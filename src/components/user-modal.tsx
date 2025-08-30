@@ -34,7 +34,7 @@ import { getBranches } from '@/services/branch-service';
 const userSchema = z.object({
     name: z.string().min(1, "El nombre es requerido."),
     email: z.string().email("Debe ser un email válido."),
-    role: z.enum(['Administrador', 'Cajero'], { required_error: 'El rol es requerido.'}),
+    role: z.enum(['Administrador', 'Gerente', 'Cajero'], { required_error: 'El rol es requerido.'}),
     branchId: z.string({ required_error: 'La sucursal es requerida.'}),
 });
 
@@ -47,7 +47,9 @@ interface UserModalProps {
     onSave: (user: User) => void;
 }
 
-const roles: Role[] = ['Administrador', 'Cajero'];
+// Display labels mapped to canonical role strings used in the backend
+const roles = ['Administrador', 'Gerente', 'Cajero'] as const;
+const roleMap: Record<string, string> = { 'Administrador': 'admin', 'Gerente': 'manager', 'Cajero': 'cashier' };
 
 export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps) {
     const { toast } = useToast();
@@ -64,10 +66,12 @@ export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps
 
     useEffect(() => {
         if (isOpen && user) {
+            // Map canonical role -> display label for the select control
+            const inverseRoleMap: Record<string, string> = { 'admin': 'Administrador', 'manager': 'Gerente', 'cashier': 'Cajero', 'owner': 'Administrador' };
             form.reset({
                 name: user.name,
                 email: user.email,
-                role: user.role,
+                role: (inverseRoleMap[user.role] || 'Cajero') as any,
                 branchId: user.branchId,
             });
         } else if (isOpen && !user) {
@@ -78,15 +82,23 @@ export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps
         }
     }, [isOpen, user, form]);
 
-    useEffect(() => {
-    const accountId = authState.userDoc?.accountId as string | undefined;
-    const unsub = getBranches(setBranches, accountId);
-        return () => unsub();
-    }, []);
+        useEffect(() => {
+            const accountId = authState.userDoc?.accountId as string | undefined;
+            // If modal is not open, do nothing
+            if (!isOpen) {
+                return;
+            }
+
+            const unsub = getBranches(setBranches, accountId);
+            return () => {
+                try { unsub(); } catch (e) { /* ignore */ }
+                // Clear branches when closing/unsubscribing to avoid stale data
+                setBranches([]);
+            };
+        }, [authState.userDoc?.accountId, isOpen]);
 
     const onSubmit = async (data: UserFormValues) => {
         setLoading(true);
-        const roleMap: Record<string, string> = { 'Administrador': 'admin', 'Cajero': 'cashier' };
         const userToSave = {
             id: user?.id,
             name: data.name,
@@ -120,7 +132,7 @@ export function UserModal({ user, isOpen, onOpenChange, onSave }: UserModalProps
                 throw new Error(msg);
             }
 
-            const payload = { accountId, email: data.email, password: '', role: userToSave.role };
+            const payload = { accountId, email: data.email, password: '', role: userToSave.role, name: data.name, branchId: data.branchId };
             // debug: log the destination and payload so developer can inspect network/console
             console.debug('createUser payload ->', { createUrl, payload });
             const r = await fetch(createUrl, {

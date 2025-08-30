@@ -20,6 +20,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { getProducts } from '@/services/product-service';
 import { getBranches } from '@/services/branch-service';
 import { getSales, saveSale } from '@/services/sales-service';
+import { getActiveCashRegisterSession, createCashRegisterSession, addSaleToActiveSession } from '@/services/cash-register-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,8 +29,6 @@ import { es } from 'date-fns/locale';
 
 type CartItem = Product & { quantity: number };
 
-// Inicialmente sin ventas mock
-const mockSales: Sale[] = [];
 
 
 export default function SalesPage() {
@@ -47,8 +46,8 @@ export default function SalesPage() {
     const [discount, setDiscount] = useState(0);
     const [discountInput, setDiscountInput] = useState("");
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
-    const [activeSession, setActiveSession] = useState(true);
-    const [salesHistory, setSalesHistory] = useState<Sale[]>(mockSales);
+    const [activeSession, setActiveSession] = useState<any | null>(null);
+    const [salesHistory, setSalesHistory] = useState<Sale[]>([]);
     const [transactionSearch, setTransactionSearch] = useState('');
 
     useEffect(() => {
@@ -56,12 +55,14 @@ export default function SalesPage() {
     const unsubProd = getProducts(setProducts, accountId);
     const unsubSales = getSales(setSalesHistory, accountId);
     const unsubBranches = getBranches(setBranches, accountId);
+    const unsubSession = getActiveCashRegisterSession(selectedBranch || undefined, accountId, setActiveSession);
         return () => {
             unsubProd();
             unsubSales();
             unsubBranches();
+            if (unsubSession) unsubSession();
         }
-    }, []);
+    }, [selectedBranch, authState.userDoc]);
 
     const filteredProducts = useMemo(() => {
         if (!searchQuery) return products;
@@ -125,7 +126,7 @@ export default function SalesPage() {
             return;
         }
 
-        const newSale: Sale = {
+    const newSale: Sale = {
             id: `SALE-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
             date: new Date().getTime(),
             items: cart,
@@ -134,11 +135,20 @@ export default function SalesPage() {
             tax,
             discount,
             paymentMethod,
-            branchId: selectedBranch || 'branch-1',
+            branchId: selectedBranch || (authState.userDoc?.branchId as string) || 'branch-1',
         };
 
         try {
-            const saleId = await saveSale(newSale);
+            // attach accountId at save time (Sale type doesn't include accountId in definition)
+            const saleForSave = { ...newSale, accountId: authState.userDoc?.accountId } as any;
+            const saleForSaveWithSession = { ...saleForSave, sessionId: activeSession?.id } as any;
+            const saleId = await saveSale(saleForSaveWithSession);
+            // Also update the active cash register session counters (best-effort)
+            try {
+                await addSaleToActiveSession(newSale.branchId, authState.userDoc?.accountId as string | undefined, { total: newSale.total, paymentMethod: newSale.paymentMethod });
+            } catch (e) {
+                console.warn('Failed to update active cash register session after sale', e);
+            }
             newSale.id = saleId;
             setCompletedSale(newSale);
             setIsReceiptModalOpen(true);

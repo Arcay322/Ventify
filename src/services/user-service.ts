@@ -5,13 +5,20 @@ import type { User } from '@/types/user';
 const USERS_COLLECTION = 'users';
 
 export const getUsers = (cb: (users: User[]) => void, accountId?: string) => {
+  if (!accountId) {
+    console.warn('getUsers called without accountId — skipping subscription to avoid unauthorized full-collection read');
+    return () => { /* no-op unsubscribe */ };
+  }
   const col = collection(db, USERS_COLLECTION);
-  const q = accountId ? query(col, where('accountId', '==', accountId)) : col;
+  const q = query(col, where('accountId', '==', accountId));
   return onSnapshot(q as any, (snap: QuerySnapshot<DocumentData>) => {
     const users = snap.docs.map((d: QueryDocumentSnapshot<DocumentData>) => ({ id: d.id, ...(d.data() || {}) } as User));
     cb(users);
+  }, (err) => {
+    console.error('onSnapshot error (users query)', { errorCode: err && err.code, message: err && err.message });
   });
 };
+
 
 export const saveUser = async (user: User) => {
   if (user.id) {

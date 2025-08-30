@@ -8,6 +8,7 @@ import { PlusCircle, Edit } from "lucide-react";
 import { CustomerModal } from '@/components/customer-modal';
 import type { Customer } from '@/types/customer';
 import { getCustomers, saveCustomer } from '@/services/customer-service';
+import { useAuth } from '@/hooks/use-auth';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -29,10 +30,12 @@ export default function CustomersPage() {
     }
   };
 
+  const auth = useAuth();
   useEffect(() => {
-    const unsubscribe = getCustomers(setCustomers);
-    return () => unsubscribe();
-  }, []);
+    const accountId = (auth.userDoc && auth.userDoc.accountId) as string | undefined | null;
+    const unsubscribe = getCustomers(accountId, setCustomers);
+    return () => unsubscribe && unsubscribe();
+  }, [auth.userDoc]);
 
   return (
     <div className="flex flex-col gap-8">

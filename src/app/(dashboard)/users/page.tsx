@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Edit, Trash2 } from "lucide-react";
@@ -22,34 +22,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { mockBranches } from '@/lib/mock-data';
+// mock-data removed; branches loaded from Firestore via getBranches
+import { getBranches } from '@/services/branch-service';
+import type { Branch } from '@/types/branch';
 import { ProtectedAdmin } from '@/hooks/use-auth';
 import { getUsers, saveUser, deleteUser } from '@/services/user-service';
 import { auth } from '@/lib/firebase';
 
-const mockUsers: User[] = [
-  {
-    id: 'user-1',
-    name: 'Admin General',
-    email: 'admin@ventify.com',
-    role: 'Administrador',
-    branchId: 'branch-1',
-  },
-  {
-    id: 'user-2',
-    name: 'Juan Cajero',
-    email: 'juan.cajero@ventify.com',
-    role: 'Cajero',
-    branchId: 'branch-1',
-  },
-   {
-    id: 'user-3',
-    name: 'Maria Cajera',
-    email: 'maria.cajera@ventify.com',
-    role: 'Cajero',
-    branchId: 'branch-2',
-  },
-];
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -57,13 +36,27 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [accountCounts, setAccountCounts] = useState<{ admins?: number; workers?: number } | null>(null);
   const [accountLimits, setAccountLimits] = useState<{ admins?: number; workers?: number } | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const authState = useAuth();
 
   useEffect(() => {
-    const accountIdParam = authState.userDoc?.accountId as string | undefined;
-    const unsub = getUsers(setUsers, accountIdParam);
-    return () => unsub();
+  const accountIdParam = authState.userDoc?.accountId as string | undefined;
+  if (!accountIdParam) return;
+  const unsub = getUsers(setUsers, accountIdParam);
+  return () => unsub();
   }, [authState.userDoc]);
+
+  // Debug: check whether a users/{uid} doc exists for the signed-in user
+  useEffect(() => {
+    const uid = authState.user?.uid;
+    if (!uid) return;
+    const ref = doc(db as any, 'users', uid);
+    getDoc(ref).then((snap) => {
+      console.debug('debug: users/{uid} doc for current user', { uid, exists: snap.exists(), data: snap.exists() ? snap.data() : null });
+    }).catch((e) => {
+      console.error('debug: failed to read users/{uid} doc', e);
+    });
+  }, [authState.user?.uid]);
 
   // subscribe to account document to show used/available seats
   useEffect(() => {
@@ -77,6 +70,14 @@ export default function UsersPage() {
       setAccountLimits(data.limits || { admins: 1, workers: 4 });
     });
     return () => unsub();
+  }, [authState.userDoc]);
+
+  // subscribe to branches for the account so we can display branch names for users
+  useEffect(() => {
+    const accountId = authState.userDoc?.accountId as string | undefined;
+    if (!accountId) return;
+    const unsub = getBranches(setBranches, accountId);
+    return () => { try { unsub(); } catch (e) {} };
   }, [authState.userDoc]);
 
   const handleOpenModal = (user: User | null) => {
@@ -114,8 +115,9 @@ export default function UsersPage() {
     }
   }
   
-  const getBranchName = (branchId: string) => {
-      return mockBranches.find(b => b.id === branchId)?.name || 'N/A';
+  const getBranchName = (branchId?: string) => {
+      if (!branchId) return 'N/A';
+      return branches.find(b => b.id === branchId)?.name || 'N/A';
   }
 
   return (
@@ -158,7 +160,7 @@ export default function UsersPage() {
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                      <Badge variant={user.role === 'Administrador' ? 'default' : 'secondary'}>{user.role}</Badge>
+                      <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>{user.role}</Badge>
                   </TableCell>
                   <TableCell>{getBranchName(user.branchId)}</TableCell>
                   <TableCell className="text-right space-x-2">

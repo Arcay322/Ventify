@@ -1,10 +1,10 @@
 import { db } from '@/lib/firebase';
 import { Branch } from '@/types/branch';
-import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot, QuerySnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot, QuerySnapshot, query, where, getDocs } from 'firebase/firestore';
 
 const BRANCHES_COLLECTION = 'branches';
 
-const branchFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Branch => {
+const branchFromDoc = (doc: QueryDocumentSnapshot<any>): Branch => {
   const data = doc.data();
   return {
     id: doc.id,
@@ -16,6 +16,17 @@ const branchFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Branch => {
 export const getBranches = (callback: (branches: Branch[]) => void, accountId?: string) => {
   const branchesCollection = collection(db, BRANCHES_COLLECTION);
   const q = accountId ? query(branchesCollection, where('accountId', '==', accountId)) : branchesCollection;
+  // Fire a one-time fetch so callers get immediate results for UI render, then subscribe for live updates.
+  (async () => {
+    try {
+      const snap = await getDocs(q as any);
+      const initial = snap.docs.map(branchFromDoc);
+      callback(initial);
+    } catch (e) {
+      // ignore one-off failure; onSnapshot will still handle live updates
+    }
+  })();
+
   const unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
     const branches = snapshot.docs.map(branchFromDoc);
     callback(branches);
@@ -23,14 +34,15 @@ export const getBranches = (callback: (branches: Branch[]) => void, accountId?: 
   return unsubscribe;
 };
 
-import { addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { addDoc, doc, setDoc, deleteDoc } from 'firebase/firestore';
 
 export const saveBranch = async (branch: Partial<Branch> & { id?: string }) => {
   if (branch.id) {
     const branchRef = doc(db, BRANCHES_COLLECTION, branch.id);
     const { id, ...branchData } = branch;
-    await updateDoc(branchRef, branchData as any);
-    return branch.id;
+  // Use setDoc with merge so we can create-or-update safely even if the doc didn't exist yet.
+  await setDoc(branchRef, branchData as any, { merge: true });
+  return branch.id;
   } else {
     const { id, ...branchData } = branch;
     const docRef = await addDoc(collection(db, BRANCHES_COLLECTION), branchData as any);

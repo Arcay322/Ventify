@@ -19,7 +19,9 @@ export const getSettings = async (): Promise<Settings | null> => {
 
 export const subscribeSettings = (cb: (data: Settings | null) => void) => {
   const ref = doc(db, SETTINGS_COLLECTION, GLOBAL_DOC);
-  return onSnapshot(ref, (snap) => cb(snap.exists() ? (snap.data() as Settings) : null));
+  return onSnapshot(ref, (snap) => cb(snap.exists() ? (snap.data() as Settings) : null), (err) => {
+    console.error('onSnapshot error (settings doc)', { errorCode: err && err.code, message: err && err.message });
+  });
 };
 
 export const saveSettings = async (data: Settings) => {

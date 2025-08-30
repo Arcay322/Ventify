@@ -1,5 +1,7 @@
 export type CashRegisterSession = {
   id: string;
+  branchId: string;
+  accountId: string;
   initialAmount: number;
   openTime: number; // as timestamp
   closeTime?: number; // as timestamp

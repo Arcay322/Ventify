@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Edit, Trash2 } from "lucide-react";
 import { BranchModal } from '@/components/branch-modal';
+import { useAuth } from '@/hooks/use-auth';
 import type { Branch } from '@/types/branch';
 import { getBranches, saveBranch, deleteBranch } from '@/services/branch-service';
 import {
@@ -33,7 +34,10 @@ export default function BranchesPage() {
 
   const handleSaveBranch = async (branch: Branch) => {
     try {
-      await saveBranch(branch);
+  // Ensure branch is linked to the current account
+  const accountId = authState.userDoc?.accountId;
+  const branchToSave = { ...branch, accountId } as Branch;
+  await saveBranch(branchToSave);
       setIsModalOpen(false);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -50,10 +54,13 @@ export default function BranchesPage() {
     }
   }
 
+  const authState = useAuth();
+
   useEffect(() => {
-    const unsubscribe = getBranches(setBranches);
+    const accountId = authState.userDoc?.accountId as string | undefined;
+    const unsubscribe = getBranches(setBranches, accountId);
     return () => unsubscribe();
-  }, []);
+  }, [authState.userDoc?.accountId]);
 
   return (
     <div className="flex flex-col gap-8">

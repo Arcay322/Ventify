@@ -1,8 +1,9 @@
 import { db } from '@/lib/firebase';
 import { Sale } from '@/types/sale';
-import { collection, onSnapshot, addDoc, DocumentData, QueryDocumentSnapshot, QuerySnapshot, runTransaction, doc, DocumentReference, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, DocumentData, QueryDocumentSnapshot, QuerySnapshot, runTransaction, doc, DocumentReference, query, where, updateDoc, getDoc, increment } from 'firebase/firestore';
 import { applyAdjustments } from './inventory-service';
 import { Product } from '@/types/product';
+import { activeSessionId, resolveAccountIdFromAuth } from './cash-register-service';
 
 const SALES_COLLECTION = 'sales';
 
@@ -27,6 +28,8 @@ export const getSales = (callback: (sales: Sale[]) => void, accountId?: string) 
   const unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
     const sales = snapshot.docs.map(saleFromDoc).sort((a: Sale, b: Sale) => (b.date || 0) - (a.date || 0));
     callback(sales);
+  }, (err) => {
+    console.error('onSnapshot error (sales query)', { errorCode: err && err.code, message: err && err.message });
   });
   return unsubscribe;
 };
@@ -67,7 +70,36 @@ export const saveSale = async (sale: Partial<Sale>) => {
       tx.update(u.ref, u.data);
     }
 
-    tx.set(saleRef, saleData);
+    // If there is an active session for this branch/account, increment its counters atomically
+    const branch = branchId;
+    const account = (saleData as any).accountId as string | undefined;
+    if (branch) {
+      try {
+        const resolvedAccount = await resolveAccountIdFromAuth(account);
+        if (resolvedAccount) {
+          const sessionRef = doc(db, 'cash_register_sessions', activeSessionId(branch, resolvedAccount));
+          const sessionSnap = await tx.get(sessionRef);
+          if (sessionSnap.exists() && sessionSnap.data()?.status === 'open') {
+          const incs: any = { totalSales: increment(saleData.total || 0) };
+          // choose which payment counter
+          const pm = saleData.paymentMethod;
+          if (pm === 'Efectivo') incs.cashSales = increment(saleData.total || 0);
+          else if (pm === 'Tarjeta') incs.cardSales = increment(saleData.total || 0);
+          else if (pm === 'Digital') incs.digitalSales = increment(saleData.total || 0);
+          // use transaction update with FieldValue increments
+            tx.update(sessionRef, incs as any);
+            }
+          }
+        } catch (e) {
+        console.warn('Could not update cash register session in transaction', e);
+      }
+    }
+
+  // Persist optional metadata if provided
+  if ((saleData as any).accountId) saleData.accountId = (saleData as any).accountId;
+  if ((saleData as any).sessionId) saleData.sessionId = (saleData as any).sessionId;
+
+  tx.set(saleRef, saleData);
     return saleRef.id;
   });
 };

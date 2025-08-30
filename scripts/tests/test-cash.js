@@ -16,12 +16,13 @@ const db = getFirestore(app);
 
 const CASH_REGISTER_COLLECTION = 'cash_register_sessions';
 
-async function createCashRegisterSession(branchId, initialAmount) {
-  const id = `active_${branchId}`;
+async function createCashRegisterSession(branchId, initialAmount, accountId) {
+  const acc = accountId || 'global';
+  const id = `active_${acc}_${branchId}`;
   const ref = doc(db, CASH_REGISTER_COLLECTION, id);
   const snap = await getDoc(ref);
   if (snap.exists() && snap.data().status === 'open') return false;
-  await setDoc(ref, { id, branchId, initialAmount, openTime: serverTimestamp(), status: 'open', totalSales: 0, cashSales: 0, cardSales: 0, digitalSales: 0 });
+  await setDoc(ref, { id, branchId, accountId: accountId ?? null, initialAmount, openTime: serverTimestamp(), status: 'open', totalSales: 0, cashSales: 0, cardSales: 0, digitalSales: 0 });
   return true;
 }
 
@@ -48,7 +49,7 @@ async function closeSession(sessionId, countedAmount) {
 
 (async () => {
   console.log('Creating session...');
-  const ok = await createCashRegisterSession('branch-1', 50);
+  const ok = await createCashRegisterSession('branch-1', 50, process.env.TEST_ACCOUNT_ID);
   console.log('create ->', ok);
   console.log('Sleeping 1s'); await new Promise(r => setTimeout(r, 1000));
   try { await addSaleToActiveSession('branch-1', { total: 20, paymentMethod: 'Efectivo' }); console.log('sale added'); } catch (e) { console.error('add sale err', e.message); }

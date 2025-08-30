@@ -43,7 +43,9 @@ export const getUserDoc = async (uid: string) => {
 
 export const subscribeUserDoc = (uid: string, cb: (data: any) => void) => {
   const ref = doc(db, USERS_COLLECTION, uid);
-  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
+  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null), (err) => {
+    console.error('onSnapshot error (user doc)', { uid, errorCode: err && err.code, message: err && err.message });
+  });
 };
 
 export default {

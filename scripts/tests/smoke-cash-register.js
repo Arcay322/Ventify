@@ -14,11 +14,12 @@ const db = getFirestore(app);
 (async () => {
   try {
     // Try to create a session
-  const branchId = 'branch-1';
-  console.log('Creating cash session for', branchId, 'with initial 100');
-  // Create a deterministic session document so subsequent reads/updates target the same doc
-  const sessionRef = doc(db, 'cash_register_sessions', `active_${branchId}`);
-  await setDoc(sessionRef, { branchId, initialAmount: 100, openTime: Date.now(), status: 'open', totalSales:0, cashSales:0, cardSales:0, digitalSales:0 });
+    const branchId = 'branch-1';
+    const accountId = process.env.TEST_ACCOUNT_ID || 'global';
+    console.log('Creating cash session for', branchId, 'with initial 100 (account', accountId + ')');
+    // Create a deterministic session document so subsequent reads/updates target the same doc
+    const sessionRef = doc(db, 'cash_register_sessions', `active_${accountId}_${branchId}`);
+    await setDoc(sessionRef, { id: `active_${accountId}_${branchId}`, branchId, accountId: accountId, initialAmount: 100, openTime: Date.now(), status: 'open', totalSales:0, cashSales:0, cardSales:0, digitalSales:0 });
   console.log('Session created', sessionRef.id);
 
   // Add a sale by updating the open session (read once, then update)

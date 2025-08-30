@@ -1,6 +1,6 @@
 import { db } from '@/lib/firebase';
 import { Customer } from '@/types/customer';
-import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot, query, where } from 'firebase/firestore';
 
 const CUSTOMERS_COLLECTION = 'customers';
 
@@ -16,11 +16,22 @@ const customerFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Customer => 
   };
 };
 
-export const getCustomers = (callback: (customers: Customer[]) => void) => {
-  const customersCollection = collection(db, CUSTOMERS_COLLECTION);
-  const unsubscribe = onSnapshot(customersCollection, (snapshot) => {
+// Subscribe to customers for a specific accountId only.
+// Listening the entire collection without filtering may fail due to security rules
+// if there are documents that don't belong to the caller's account.
+export const getCustomers = (accountId: string | null | undefined, callback: (customers: Customer[]) => void) => {
+  if (!accountId) {
+    console.warn('getCustomers: no accountId provided, returning empty list');
+    callback([]);
+    return () => {};
+  }
+
+  const q = query(collection(db, CUSTOMERS_COLLECTION), where('accountId', '==', accountId));
+  const unsubscribe = onSnapshot(q, (snapshot) => {
     const customers = snapshot.docs.map(customerFromDoc);
     callback(customers);
+  }, (err) => {
+    console.error('onSnapshot error (customers query)', { errorCode: err && err.code, message: err && err.message });
   });
   return unsubscribe;
 };
