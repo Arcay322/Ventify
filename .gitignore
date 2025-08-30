@@ -48,3 +48,17 @@ next-env.d.ts
 firebase-debug.log
 firestore-debug.log
 ventifyServiceKey.json
+
+# Sensitive credentials (service account keys, debug keys, certs)
+**/*service*key*.json
+**/*service*_key*.json
+**/*-sa-*.json
+**/*sa-key*.json
+**/*debug*-sa*.json
+**/debug-sa*.json
+functions/tmp-admin-test/
+*.key
+*.p12
+*.jks
+.firebase/
+.credentials
