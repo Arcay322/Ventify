@@ -1,6 +1,7 @@
 import { db } from '@/lib/firebase';
 import { Branch } from '@/types/branch';
 import { collection, onSnapshot, DocumentData, QueryDocumentSnapshot, QuerySnapshot, query, where, getDocs } from 'firebase/firestore';
+import { getDoc } from 'firebase/firestore';
 
 const BRANCHES_COLLECTION = 'branches';
 
@@ -53,4 +54,11 @@ export const saveBranch = async (branch: Partial<Branch> & { id?: string }) => {
 export const deleteBranch = async (branchId: string) => {
   const branchRef = doc(db, BRANCHES_COLLECTION, branchId);
   await deleteDoc(branchRef);
+};
+
+export const getBranchById = async (branchId: string) => {
+  if (!branchId) return null;
+  const ref = doc(db, BRANCHES_COLLECTION, branchId);
+  const snap = await getDoc(ref);
+  return snap.exists() ? (snap.data() as any) : null;
 };

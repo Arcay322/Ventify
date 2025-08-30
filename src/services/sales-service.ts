@@ -77,7 +77,8 @@ export const saveSale = async (sale: Partial<Sale>) => {
       try {
         const resolvedAccount = await resolveAccountIdFromAuth(account);
         if (resolvedAccount) {
-          const sessionRef = doc(db, 'cash_register_sessions', activeSessionId(branch, resolvedAccount));
+          const sessionId = activeSessionId(branch, resolvedAccount);
+          const sessionRef = doc(db, 'cash_register_sessions', sessionId);
           const sessionSnap = await tx.get(sessionRef);
           if (sessionSnap.exists() && sessionSnap.data()?.status === 'open') {
           const incs: any = { totalSales: increment(saleData.total || 0) };

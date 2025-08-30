@@ -10,13 +10,13 @@ const CASH_REGISTER_COLLECTION = 'cash_register_sessions';
 export const activeSessionId = (branchId: string, accountId?: string) => `active_${accountId ?? 'global'}_${branchId}`;
 
 // Try to resolve accountId from provided value or from the signed-in user's ID token claims.
-export const resolveAccountIdFromAuth = async (accountId?: string) => {
+export const resolveAccountIdFromAuth = async (accountId?: string): Promise<string | undefined> => {
     if (accountId) return accountId;
     try {
         const current = auth.currentUser;
         if (!current) return undefined;
         const token = await current.getIdTokenResult().catch(() => null);
-        if (token && token.claims && token.claims.accountId) return token.claims.accountId;
+    if (token && token.claims && typeof token.claims.accountId === 'string') return token.claims.accountId as string;
     } catch (e) {
         // ignore
     }
@@ -33,40 +33,33 @@ export const createCashRegisterSession = async (branchId: string, initialAmount:
         console.error('[cash-register] createCashRegisterSession: missing accountId (pass accountId or ensure token has accountId claim)');
         return false;
     }
-    const activeId = activeSessionId(branchId, resolvedAccountId);
-    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, activeId);
-    try { 
-        console.info('[cash-register] attempting createCashRegisterSession', { activeId, branchId, accountId, initialAmount, userId }); 
-    } catch (e) { /* ignore logging errors */ }
-
-    // Diagnostic: log the currently authenticated user and token claims (if available)
-    try {
-        const currentUid = auth.currentUser?.uid;
-        try { console.info('[cash-register] auth.currentUser?.uid', currentUid); } catch(e){}
-        if (auth.currentUser && typeof auth.currentUser.getIdTokenResult === 'function') {
-            // Do not force refresh by default; we want to inspect the current token
-            const tokenResult = await auth.currentUser.getIdTokenResult().catch(() => null);
-            try { console.debug('[cash-register] idToken claims', tokenResult ? tokenResult.claims : null); } catch(e){}
-            if (tokenResult && tokenResult.claims && tokenResult.claims.admin) {
-                try { console.info('[cash-register] token has admin claim'); } catch(e){}
-            }
-        }
-        if (currentUid && userId && currentUid !== userId) {
-            try { console.warn('[cash-register] WARNING: auth.currentUser.uid does not match passed userId', { currentUid, userId }); } catch(e){}
-        }
-    } catch (e) {
-        // non critical diagnostics
-    }
+    
+    // Generate a unique ID for each session instead of reusing the same "active" ID
+    const uniqueId = `session_${resolvedAccountId}_${branchId}_${Date.now()}`;
+    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, uniqueId);
+    
     try {
         return await runTransaction(db, async (tx) => {
-            const snap = await tx.get(sessionRef);
-            try { console.debug('[cash-register] tx.get snapshot exists:', snap.exists(), 'data:', snap.exists() ? snap.data() : null); } catch(e){}
-            if (snap.exists() && snap.data()?.status === 'open') {
+            // Check if there's already an active session for this branch/account
+            // Search by status='open' instead of relying on the active pointer
+            const coll = collection(db, CASH_REGISTER_COLLECTION);
+            const activeQuery = query(
+                coll, 
+                where('branchId', '==', branchId), 
+                where('accountId', '==', resolvedAccountId), 
+                where('status', '==', 'open'), 
+                limit(1)
+            );
+            
+            const activeSnap = await getDocs(activeQuery);
+            if (!activeSnap.empty) {
                 // Already active for this branch/account
+                console.log('Active session found:', activeSnap.docs[0].id);
                 return false;
             }
+            
             const sessionData = {
-                id: activeId,
+                id: uniqueId,
                 branchId,
                 accountId: resolvedAccountId,
                 startedBy: userId ?? null,
@@ -79,6 +72,17 @@ export const createCashRegisterSession = async (branchId: string, initialAmount:
                 digitalSales: 0,
             } as any;
             tx.set(sessionRef, sessionData);
+            
+            // Also create/update the "active" pointer document
+            const activeId = activeSessionId(branchId, resolvedAccountId);
+            const activeSessionRef = doc(db, CASH_REGISTER_COLLECTION, activeId);
+            tx.set(activeSessionRef, {
+                activeSessionId: uniqueId,
+                branchId,
+                accountId: resolvedAccountId,
+                lastUpdated: serverTimestamp()
+            });
+            
             return true;
         });
     } catch (error) {
@@ -108,12 +112,8 @@ export const getActiveCashRegisterSession = (branchId: string | undefined, accou
         } else if (resolvedAccountId) {
             q = query(coll, where('accountId', '==', resolvedAccountId), where('status', '==', 'open'), limit(1));
         }
-        try {
-            console.info('[cash-register] getActiveCashRegisterSession created query', { branchId, accountId: resolvedAccountId });
-        } catch (e) {}
 
         unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
-        try { console.debug('[cash-register] onSnapshot docs:', snapshot.docs.map(d => ({ id: d.id, data: d.data() }))); } catch(e){}
         if (snapshot.empty) {
             callback(null);
             return;
@@ -130,6 +130,8 @@ export const getActiveCashRegisterSession = (branchId: string | undefined, accou
 
         const session: CashRegisterSession = {
             id: docSnap.id,
+            branchId: data.branchId,
+            accountId: data.accountId,
             initialAmount: data.initialAmount,
             openTime: (data.openTime as Timestamp).toMillis(),
             status: data.status,
@@ -141,7 +143,7 @@ export const getActiveCashRegisterSession = (branchId: string | undefined, accou
             expectedAmount: data.expectedAmount,
             countedAmount: data.countedAmount,
             difference: data.difference,
-        };
+        } as CashRegisterSession;
         callback(session);
 
         }, (error: any) => {
@@ -157,7 +159,8 @@ export const getActiveCashRegisterSession = (branchId: string | undefined, accou
         // resolve from auth token asynchronously
         (async () => {
             const resolved = await resolveAccountIdFromAuth();
-            startQuery(resolved).catch(() => callback(null));
+            const resolvedStr: string | undefined = typeof resolved === 'string' ? resolved : undefined;
+            startQuery(resolvedStr).catch(() => callback(null));
         })();
     }
 
@@ -167,7 +170,8 @@ export const getActiveCashRegisterSession = (branchId: string | undefined, accou
 export const addSaleToActiveSession = async (branchId: string, accountId: string | undefined, sale: { total: number; paymentMethod: string }) => {
     const resolvedAccountId = await resolveAccountIdFromAuth(accountId);
     if (!resolvedAccountId) throw new Error('No accountId available to add sale to session');
-    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, activeSessionId(branchId, resolvedAccountId));
+    const sessionId = activeSessionId(branchId, resolvedAccountId);
+    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, sessionId);
     const sessionSnap = await getDoc(sessionRef);
     if (!sessionSnap.exists() || sessionSnap.data()?.status !== 'open') {
         throw new Error('No hay una sesión de caja activa para registrar la venta.');
@@ -239,6 +243,14 @@ export const closeCashRegisterSession = async (sessionId: string, countedAmount:
     }
 
     const sessionData = sessionDoc.data() as any;
+    // Get all movements for this session before closing
+    const movementsQuery = query(
+        collection(db, 'cash_register_movements'),
+        where('sessionId', '==', sessionId)
+    );
+    const movementsSnap = await getDocs(movementsQuery);
+    const movements = movementsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
     // Prefer stored expectedAmount (updated by movements) else compute
     const expectedAmount = typeof sessionData.expectedAmount === 'number'
         ? sessionData.expectedAmount
@@ -254,17 +266,63 @@ export const closeCashRegisterSession = async (sessionId: string, countedAmount:
             difference,
         });
 
-        // create a closure report document snapshot
+        // create a closure report document snapshot with movements included
         const reportRef = doc(collection(db, 'cash_register_reports'));
         const report = {
             sessionId,
             sessionSnapshot: sessionData,
+            movements, // Include movements in the report
             countedAmount,
             expectedAmount,
             difference,
             createdAt: serverTimestamp(),
+            accountId: sessionData.accountId, // Include for filtering
         } as any;
         tx.set(reportRef, report);
     });
-    // return report id would be nice but callers can query reports by sessionId
+    
+    return { reportId: sessionId, movements }; // Return movements for immediate display
+};
+
+// Get a specific cash register report by session ID
+export const getCashRegisterReport = async (sessionId: string): Promise<any> => {
+    const reportsQuery = query(
+        collection(db, 'cash_register_reports'),
+        where('sessionId', '==', sessionId),
+        limit(1)
+    );
+    const reportSnap = await getDocs(reportsQuery);
+    
+    if (reportSnap.empty) {
+        throw new Error('Reporte no encontrado');
+    }
+    
+    const reportData = reportSnap.docs[0].data();
+    return { id: reportSnap.docs[0].id, ...reportData };
+};
+
+// Get all cash register reports for an account
+export const getCashRegisterReports = (callback: (reports: any[]) => void, accountId?: string) => {
+    if (!accountId) {
+        callback([]);
+        return () => {};
+    }
+
+    const reportsQuery = query(
+        collection(db, 'cash_register_reports'),
+        where('accountId', '==', accountId),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+    );
+
+    return onSnapshot(reportsQuery, (snapshot) => {
+        const reports = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        callback(reports);
+    }, (error) => {
+        console.error('Error fetching cash register reports:', error);
+        callback([]);
+    });
 };

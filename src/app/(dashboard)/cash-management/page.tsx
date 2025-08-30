@@ -4,34 +4,20 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-    Form,
-    FormControl,
-    FormField,
-    FormItem,
-    FormLabel,
-    FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Loader2, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
 import { CashRegisterSession } from '@/types/cash-register';
-import { createCashRegisterSession, getActiveCashRegisterSession, closeCashRegisterSession } from '@/services/cash-register-service';
+import { createCashRegisterSession, getActiveCashRegisterSession, getCashRegisterReports, getCashRegisterReport, createCashMovement } from '@/services/cash-register-service';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { useAuth } from '@/hooks/use-auth';
 import { getBranches } from '@/services/branch-service';
 import { CloseRegisterModal } from '@/components/close-register-modal';
-import { createCashMovement } from '@/services/cash-register-service';
+import { CashRegisterReport } from '@/components/cash-register-report';
 
 const openRegisterSchema = z.object({
     initialAmount: z.coerce.number().min(0, "El monto inicial no puede ser negativo."),
@@ -39,8 +25,25 @@ const openRegisterSchema = z.object({
 
 type OpenRegisterFormValues = z.infer<typeof openRegisterSchema>;
 
-
 export default function CashManagementPage() {
+    // Estado para mostrar el reporte Z después de cerrar caja
+    const [reportData, setReportData] = useState<any>(null);
+
+    useEffect(() => {
+        const handler = async (e: any) => {
+            if (e.detail?.sessionId) {
+                try {
+                    const report = await getCashRegisterReport(e.detail.sessionId);
+                    setReportData(report);
+                    setShowReportModal(true);
+                } catch (err) {
+                    console.error('Failed to load report for session', e.detail?.sessionId, err);
+                }
+            }
+        };
+        window.addEventListener('show-cash-register-report', handler as EventListener);
+        return () => window.removeEventListener('show-cash-register-report', handler as EventListener);
+    }, []);
     const [actionLoading, setActionLoading] = useState(false);
     const [activeSession, setActiveSession] = useState<CashRegisterSession | null>(null);
     const authState = useAuth();
@@ -48,6 +51,9 @@ export default function CashManagementPage() {
     const [selectedBranchId, setSelectedBranchId] = useState<string | undefined>(undefined);
     const { toast } = useToast();
     const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
+    const [reports, setReports] = useState<any[]>([]);
+    const [selectedReport, setSelectedReport] = useState<any>(null);
+    const [showReportModal, setShowReportModal] = useState(false);
 
     const form = useForm<OpenRegisterFormValues>({
         resolver: zodResolver(openRegisterSchema),
@@ -78,10 +84,7 @@ export default function CashManagementPage() {
         try {
             const coll = collection(db, 'cash_register_sessions');
                         const q = query(coll, where('branchId', '==', effectiveBranchId), where('accountId', '==', accountId), where('status', '==', 'open'), limit(1));
-            // debug: log pre-check query
-            try { console.info('[cash-register] pre-check query for open sessions', { effectiveBranchId, accountId }); } catch (e) {}
             const snaps = await getDocs(q as any);
-            try { console.debug('[cash-register] pre-check snaps:', snaps.empty ? 'empty' : snaps.docs.map(d => ({ id: d.id, data: d.data() }))); } catch (e) {}
             if (!snaps.empty) {
                 const doc = snaps.docs[0];
                 const d = doc.data() as any;
@@ -99,7 +102,6 @@ export default function CashManagementPage() {
         try {
             const uid = authState.user?.uid ?? authState.uid ?? '';
             const ok = await createCashRegisterSession(effectiveBranchId as string, data.initialAmount, uid, accountId);
-            try { console.info('[cash-register] createCashRegisterSession result', { ok, effectiveBranchId, accountId, uid }); } catch(e){}
             if (ok) {
                 toast({ title: 'Caja abierta', description: `Se abrió la caja con S/${data.initialAmount.toFixed(2)}` });
             } else {
@@ -122,9 +124,28 @@ export default function CashManagementPage() {
         if (!activeSession) return;
         setIsCloseModalOpen(true);
     }
-    
-    // Dev helpers to simulate open/close during development
-    // remove dev simulation helpers to avoid false positives during testing
+
+    const handleViewReport = async (report: any) => {
+        try {
+            // If report doesn't have movements, get the full report
+            if (!report.movements) {
+                const fullReport = await getCashRegisterReport(report.sessionId);
+                setSelectedReport(fullReport);
+                setReportData(fullReport);
+            } else {
+                setSelectedReport(report);
+                setReportData(report);
+            }
+            setShowReportModal(true);
+        } catch (error) {
+            console.error('Error loading report:', error);
+            toast({
+                title: 'Error',
+                description: 'No se pudo cargar el reporte',
+                variant: 'destructive'
+            });
+        }
+    };
 
     const [movementAmount, setMovementAmount] = useState<number | null>(null);
     const [movementReason, setMovementReason] = useState('');
@@ -167,23 +188,38 @@ export default function CashManagementPage() {
 
     // Subscribe to active session only after we know the accountId (avoids queries with undefined filters)
     // Use selectedBranchId as fallback for owners who don't have branchId in their user doc
-    useEffect(() => {
+    const fetchActiveSession = () => {
         const accountId = authState.userDoc?.accountId as string | undefined;
         const userBranchId = authState.userDoc?.branchId as string | undefined;
         const effectiveBranchId = userBranchId ?? selectedBranchId;
-        if (!accountId) return; // wait until accountId is available
-        // do not subscribe if we still don't have an effective branch
-        if (!effectiveBranchId) return;
+        if (!accountId || !effectiveBranchId) return;
         const unsub = getActiveCashRegisterSession(effectiveBranchId, accountId, setActiveSession);
-        return () => { try { if (unsub) unsub(); } catch (e) { /* ignore */ } };
+        return unsub;
+    };
+
+    const loadReports = () => {
+        const accountId = authState.userDoc?.accountId as string | undefined;
+        if (!accountId) return;
+        const unsub = getCashRegisterReports(setReports, accountId);
+        return unsub;
+    };
+
+    useEffect(() => {
+        const unsubSession = fetchActiveSession();
+        return () => { try { if (unsubSession) unsubSession(); } catch (e) { /* ignore */ } };
     }, [authState.userDoc?.accountId, authState.userDoc?.branchId, selectedBranchId]);
+
+    // Load cash register reports
+    useEffect(() => {
+        const unsubReports = loadReports();
+        return () => { try { if (unsubReports) unsubReports(); } catch (e) { /* ignore */ } };
+    }, [authState.userDoc?.accountId]);
 
     return (
         <>
             <div className="flex flex-col gap-8">
-                 <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                     <h1 className="text-3xl font-bold tracking-tight">Gestión de Caja</h1>
-                    {/* Dev simulation buttons removed */}
                 </div>
 
                 {!activeSession ? (
@@ -287,6 +323,40 @@ export default function CashManagementPage() {
                                 </div>
                             </CardFooter>
                         </Card>
+
+                        {/* Reportes Anteriores */}
+                        <Card className="md:col-span-2">
+                            <CardHeader>
+                                <CardTitle>Reportes de Cierre Anteriores</CardTitle>
+                                <CardDescription>Historial de cierres de caja realizados</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {reports.length === 0 ? (
+                                    <p className="text-muted-foreground text-center py-8">No hay reportes de cierre disponibles.</p>
+                                ) : (
+                                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                                        {reports.slice(0, 10).map(report => (
+                                            <div key={report.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                                <div>
+                                                    <div className="font-medium">
+                                                        {report.sessionSnapshot?.branchId || 'N/A'} - 
+                                                        {report.createdAt ? new Date(report.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}
+                                                    </div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        Diferencia: S/{(report.difference || 0).toFixed(2)} | 
+                                                        Total: S/{(report.expectedAmount || 0).toFixed(2)}
+                                                    </div>
+                                                </div>
+                                                <Button variant="outline" size="sm" onClick={() => handleViewReport(report)}>
+                                                    <FileText className="h-4 w-4 mr-2" />
+                                                    Ver Reporte
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
                     </div>
                 )}
             </div>
@@ -294,7 +364,26 @@ export default function CashManagementPage() {
                 <CloseRegisterModal 
                     session={activeSession}
                     isOpen={isCloseModalOpen}
-                    onOpenChange={setIsCloseModalOpen}
+                    onOpenChange={(open) => {
+                        setIsCloseModalOpen(open);
+                        if (!open) {
+                            // When the close modal is closed, refresh the session state
+                            fetchActiveSession();
+                            loadReports();
+                        }
+                    }}
+                />
+            )}
+            
+            {/* Reporte Z modal global */}
+            {reportData && (
+                <CashRegisterReport
+                    reportData={reportData}
+                    isOpen={showReportModal}
+                    onOpenChange={(open) => {
+                        setShowReportModal(open);
+                        if (!open) setReportData(null);
+                    }}
                 />
             )}
         </>

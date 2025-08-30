@@ -1,0 +1,240 @@
+﻿Documento de Requerimientos Funcionales
+Sistema de Punto de Venta (POS) SaaS
+1. Resumen Ejecutivo
+El presente documento detalla los requerimientos funcionales para el desarrollo de una aplicación de Software as a Service (SaaS) orientada a la gestión de puntos de venta, inventario y clientes para pequeños y medianos comercios. El objetivo principal es ofrecer una solución digital, centralizada y escalable que reemplace los métodos manuales (hojas de cálculo, cuadernos) por un sistema robusto, intuitivo y adaptado a las realidades del mercado local, incluyendo precios flexibles y gestión de múltiples sucursales.
+2. Definición de Roles de Usuario
+El sistema contará con una jerarquía de cuatro roles de usuario para garantizar la seguridad y la correcta delegación de funciones.
+Rol
+	Descripción
+	Propietario (Owner)
+	El super-administrador de la cuenta. Es el usuario que registra el negocio. Tiene acceso total a todas las funciones, incluyendo la gestión de la suscripción y la eliminación de la cuenta. Solo puede haber un Propietario.
+	Administrador (Admin)
+	La mano derecha del Propietario. Tiene acceso a todas las funciones operativas del negocio (reportes, inventario, usuarios, sucursales), pero no puede gestionar la suscripción ni eliminar la cuenta.
+	Gerente de Tienda (Manager)
+	Responsable de las operaciones de una sucursal específica. Su acceso a reportes e inventario está limitado a su local asignado. Puede supervisar a los cajeros de su tienda.
+	Cajero (Cashier)
+	El rol más limitado, enfocado exclusivamente en la operación del Punto de Venta. Registra ventas, gestiona su turno de caja y no tiene acceso a información sensible como costos o reportes de rentabilidad.
+	3. Módulos del Sistema
+Módulo 1: Punto de Venta (POS)
+* Descripción General: Interfaz principal para el registro de transacciones de venta. Debe ser rápida, táctil y fácil de usar en un ambiente de mostrador.
+* Flujo de Trabajo Detallado:
+   1. El usuario (Cajero/Gerente/Admin) accede a la pantalla del POS.
+   2. Busca productos por nombre, SKU o escáner de código de barras.
+   3. Añade productos al carrito de compras.
+   4. Si es necesario, asocia un cliente a la venta buscándolo en la base de datos o creando uno nuevo (con un formulario rápido).
+   5. Si tiene los permisos, puede modificar el precio de un ítem (regateo), aplicar un descuento o cambiar la lista de precios (ej. de "Minorista" a "Mayorista").
+   6. Procede al cobro, seleccionando uno o varios métodos de pago (Efectivo, Tarjeta, etc.).
+   7. Finaliza la venta. El sistema descuenta automáticamente el stock, registra la transacción en el historial del cliente (si fue asociado) y genera un recibo para imprimir.
+   8. El sistema queda listo para la siguiente venta.
+* Matriz de Permisos por Rol:
+Funcionalidad
+	Propietario
+	Admin
+	Gerente
+	Cajero
+	Registrar una venta
+	✓
+	✓
+	✓
+	✓
+	Asociar un cliente a la venta
+	✓
+	✓
+	✓
+	✓
+	Anular/Editar precio de un ítem
+	✓
+	✓
+	✓ (1)
+	✗
+	Aplicar descuentos
+	✓
+	✓
+	✓ (1)
+	✗
+	Realizar devoluciones
+	✓
+	✓
+	✓
+	✓
+	(1) Este permiso puede ser habilitado o deshabilitado para el rol de Gerente por un Administrador.
+Módulo 2: Gestión de Inventario y Catálogo
+* Descripción General: El núcleo del sistema para el control de productos y existencias. Permite una gestión centralizada del catálogo.
+* Flujo de Trabajo Detallado:
+   1. Un usuario con permisos (Admin/Propietario) accede al módulo.
+   2. Para añadir un producto, hace clic en "Nuevo Producto" y completa el formulario: nombre, SKU, categoría, precio de costo.
+   3. Define los precios de venta para las diferentes listas ("Minorista", "Mayorista", etc.).
+   4. Asigna el stock inicial para cada sucursal existente.
+   5. Para ajustar el stock, busca un producto, selecciona la sucursal y realiza un ajuste manual, especificando un motivo (ej. "Merma", "Ingreso de mercancía").
+   6. El sistema registra todos los movimientos de inventario en un historial (kardex) para cada producto.
+* Matriz de Permisos por Rol:
+Funcionalidad
+	Propietario
+	Admin
+	Gerente
+	Cajero
+	Ver lista de productos y stock
+	✓
+	✓
+	✓
+	✗
+	Ver precio de costo
+	✓
+	✓
+	✗
+	✗
+	Crear/Editar/Eliminar productos
+	✓
+	✓
+	✗
+	✗
+	Ajustar stock
+	✓
+	✓
+	✓ (2)
+	✗
+	(2) El Gerente solo puede ajustar el stock de su sucursal asignada.
+Módulo 3: Gestión de Caja (Turnos)
+* Descripción General: Módulo para el control del dinero en efectivo y la responsabilidad de los empleados a través de turnos de trabajo.
+* Flujo de Trabajo Detallado:
+   1. Apertura: Al iniciar su jornada, el Cajero/Gerente abre un turno declarando el monto inicial de efectivo en su gaveta.
+   2. Operaciones: Durante el turno, todas las ventas en efectivo se suman, y se pueden registrar ingresos o retiros manuales con justificación.
+   3. Cierre: Al final de la jornada, el usuario inicia el cierre. El sistema muestra el total de efectivo esperado (Monto Inicial + Ventas - Retiros).
+   4. El usuario cuenta el dinero físico, lo ingresa en el sistema.
+   5. El sistema calcula y muestra la diferencia (faltante o sobrante).
+   6. El usuario confirma el cierre, generando un reporte final (Cierre Z) y bloqueando el turno.
+* Matriz de Permisos por Rol:
+Funcionalidad
+	Propietario
+	Admin
+	Gerente
+	Cajero
+	Abrir/Cerrar su propio turno
+	✓
+	✓
+	✓
+	✓
+	Ver historial de sus propios turnos
+	✓
+	✓
+	✓
+	✓
+	Ver historial de turnos de otros
+	✓ (Todas)
+	✓ (Todas)
+	✓ (3)
+	✗
+	Ver diferencias (faltantes/sobrantes)
+	✓ (Todas)
+	✓ (Todas)
+	✓ (3)
+	✗
+	(3) El Gerente solo ve la información de caja de su sucursal asignada.
+Módulo 4: Módulo de Clientes (CRM)
+* Descripción General: Herramienta para gestionar la base de datos de clientes, ver su historial de compras y fomentar la fidelización.
+* Flujo de Trabajo Detallado:
+   1. El usuario accede a la lista principal de clientes, donde puede buscar por nombre, teléfono o email.
+   2. Desde esta vista, puede añadir un nuevo cliente llenando un formulario completo con sus datos de contacto y facturación.
+   3. Al hacer clic en un cliente, accede a su perfil detallado, que muestra:
+      * Su información de contacto.
+      * Métricas clave (Total Gastado, Nº de Compras, Ticket Promedio).
+      * Un historial cronológico de todas sus compras.
+      * La posibilidad de ver el detalle de cada compra individual.
+* Matriz de Permisos por Rol:
+Funcionalidad
+	Propietario
+	Admin
+	Gerente
+	Cajero
+	Ver lista completa de clientes
+	✓
+	✓
+	✓ (4)
+	✗
+	Ver perfil detallado del cliente
+	✓
+	✓
+	✓ (4)
+	✗
+	Crear/Editar clientes
+	✓
+	✓
+	✓
+	✓ (5)
+	Ver métricas de valor del cliente
+	✓
+	✓
+	✗
+	✗
+	(4) El Gerente solo ve a los clientes que han comprado en su sucursal.
+(5) El Cajero solo puede crear clientes desde el POS con un formulario simplificado.
+Módulo 5: Reportes y Analítica
+* Descripción General: Panel centralizado para la visualización de datos de negocio, permitiendo la toma de decisiones informadas.
+* Flujo de Trabajo Detallado:
+   1. El usuario accede al Dashboard, que muestra gráficos y KPIs clave del día/semana.
+   2. Puede navegar a reportes específicos (Ventas, Inventario, Clientes).
+   3. Utiliza filtros por rango de fecha y sucursal para acotar la información.
+   4. Puede ver reportes como "Productos más vendidos", "Ventas por empleado", "Rentabilidad por producto", etc.
+   5. Todos los reportes pueden ser exportados a formatos como CSV o Excel.
+* Matriz de Permisos por Rol:
+Funcionalidad
+	Propietario
+	Admin
+	Gerente
+	Cajero
+	Ver Dashboard
+	✓ (Todas)
+	✓ (Todas)
+	✓ (3)
+	✗
+	Ver reportes de ventas
+	✓ (Todas)
+	✓ (Todas)
+	✓ (3)
+	✓ (6)
+	Ver reportes de rentabilidad/costos
+	✓
+	✓
+	✗
+	✗
+	Exportar reportes
+	✓
+	✓
+	✓ (3)
+	✗
+	(3) El Gerente solo ve los reportes de su sucursal asignada.
+(6) El Cajero solo puede ver un resumen de las ventas de su turno actual.
+Módulo 6: Administración y Configuración
+* Descripción General: El panel de control del dueño del negocio para configurar el sistema, gestionar sucursales y equipo.
+* Flujo de Trabajo Detallado:
+   1. Gestión de Usuarios: El Propietario/Admin invita a un nuevo empleado vía email. Le asigna un rol y una sucursal principal. El empleado recibe un correo para establecer su contraseña.
+   2. Gestión de Sucursales: El Propietario/Admin crea nuevas sucursales, asignándoles un nombre y dirección.
+   3. Configuración General: Configura datos de la empresa (nombre, logo), impuestos, y personaliza la plantilla de los recibos.
+   4. Gestión de Suscripción: Solo el Propietario puede ver esta sección para cambiar de plan, actualizar su método de pago y ver su historial de facturas.
+* Matriz de Permisos por Rol:
+Funcionalidad
+	Propietario
+	Admin
+	Gerente
+	Cajero
+	Gestionar usuarios y roles
+	✓
+	✓
+	✓ (7)
+	✗
+	Gestionar sucursales
+	✓
+	✓
+	✗
+	✗
+	Ver/Editar configuración general
+	✓
+	✓
+	✗
+	✗
+	Gestionar la suscripción al SaaS
+	✓
+	✗
+	✗
+	✗
+	(7) El Gerente solo puede gestionar los usuarios con rol de Cajero de su sucursal.

@@ -14,8 +14,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     React.useEffect(() => {
     let cleanupUserDoc: (() => void) | null = null;
-    const unsub = onAuthChange((u) => {
+    const unsub = onAuthChange(async (u) => {
       if (u) {
+        // Force token refresh to ensure users have latest claims
+        try {
+          await u.getIdTokenResult(true);
+        } catch (e) {
+          console.warn('[AUTH] Could not refresh token:', e);
+        }
+        
         setState(s => ({ ...s, initialized: true, uid: u.uid, user: { uid: u.uid, email: u.email ?? undefined, displayName: u.displayName ?? undefined } }));
         cleanupUserDoc = subscribeUserDoc(u.uid, (doc) => setState(s => ({ ...s, userDoc: doc })));
       } else {

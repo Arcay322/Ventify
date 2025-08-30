@@ -37,7 +37,7 @@ export default function SalesPage() {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [branches, setBranches] = useState<any[]>([]);
-    const [selectedBranch, setSelectedBranch] = useState<string | null>('branch-1');
+    const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
     const { toast } = useToast();
     const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
     const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
@@ -47,6 +47,7 @@ export default function SalesPage() {
     const [discountInput, setDiscountInput] = useState("");
     const [paymentMethod, setPaymentMethod] = useState("Efectivo");
     const [activeSession, setActiveSession] = useState<any | null>(null);
+    const [sessionLoading, setSessionLoading] = useState(true);
     const [salesHistory, setSalesHistory] = useState<Sale[]>([]);
     const [transactionSearch, setTransactionSearch] = useState('');
 
@@ -55,14 +56,39 @@ export default function SalesPage() {
     const unsubProd = getProducts(setProducts, accountId);
     const unsubSales = getSales(setSalesHistory, accountId);
     const unsubBranches = getBranches(setBranches, accountId);
-    const unsubSession = getActiveCashRegisterSession(selectedBranch || undefined, accountId, setActiveSession);
+    
+    // Only subscribe to session when we have a branch selected
+    if (selectedBranch) {
+        setSessionLoading(true);
+        const unsubSession = getActiveCashRegisterSession(selectedBranch, accountId, (session) => {
+            setActiveSession(session);
+            setSessionLoading(false);
+        });
         return () => {
             unsubProd();
             unsubSales();
             unsubBranches();
             if (unsubSession) unsubSession();
         }
+    } else {
+        return () => {
+            unsubProd();
+            unsubSales();
+            unsubBranches();
+        }
+    }
     }, [selectedBranch, authState.userDoc]);
+
+    // Set user's branch as default when available, or first branch for owners
+    useEffect(() => {
+        const userBranchId = authState.userDoc?.branchId;
+        if (userBranchId && !selectedBranch) {
+            setSelectedBranch(userBranchId);
+        } else if (!userBranchId && branches.length > 0 && !selectedBranch) {
+            // Owner or admin without specific branch - use first available branch
+            setSelectedBranch(branches[0].id);
+        }
+    }, [authState.userDoc?.branchId, selectedBranch, branches]);
 
     const filteredProducts = useMemo(() => {
         if (!searchQuery) return products;
@@ -169,12 +195,33 @@ export default function SalesPage() {
     const tax = discountedSubtotal > 0 ? discountedSubtotal * 0.18 : 0;
     const total = discountedSubtotal + tax;
 
+    if (sessionLoading) {
+        return (
+            <div className="flex justify-center items-center py-20">
+                <div className="text-center">
+                    <div className="animate-pulse text-muted-foreground">Cargando sesión de caja...</div>
+                </div>
+            </div>
+        );
+    }
+
+    if (!selectedBranch) {
+        return (
+            <Alert className="max-w-xl mx-auto mt-10">
+                <AlertTitle className="text-xl">Selecciona una Sucursal</AlertTitle>
+                <AlertDescription>
+                    Cargando sucursales disponibles...
+                </AlertDescription>
+            </Alert>
+        );
+    }
+
     if (!activeSession) {
         return (
             <Alert variant="destructive" className="max-w-xl mx-auto mt-10">
                 <AlertTitle className="text-xl">Caja Cerrada</AlertTitle>
                 <AlertDescription>
-                    No hay una sesión de caja activa. Para registrar nuevas ventas, primero debes abrir la caja.
+                    No hay una sesión de caja activa para la sucursal {branches.find(b => b.id === selectedBranch)?.name || selectedBranch}. Para registrar nuevas ventas, primero debes abrir la caja.
                     <Button asChild className="mt-4"><Link href="/cash-management">Ir a Gestión de Caja</Link></Button>
                 </AlertDescription>
             </Alert>

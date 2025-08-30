@@ -19,6 +19,40 @@ service cloud.firestore {
       );
     }
 
+    // Manager check: true if caller is admin/owner OR has role=manager for the specific branch
+    function isManagerForBranch(branchId) {
+      return isAuthenticated() && (
+        request.auth.token.admin == true
+        || (request.auth.token.role == 'manager' && request.auth.token.branchId == branchId)
+        || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager'
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branchId == branchId
+        )
+      );
+    }
+
+    // Cashier check: true if caller is cashier for the specific branch (or higher role)
+    function isCashierForBranch(branchId) {
+      return isAuthenticated() && (
+        isAdmin()
+        || isManagerForBranch(branchId)
+        || (request.auth.token.role == 'cashier' && request.auth.token.branchId == branchId)
+        || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'cashier'
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.branchId == branchId
+        )
+      );
+    }
+
+    // Caller is the employee who started the session
+    function isSessionStartedByCaller(sessionId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/cash_register_sessions/$(sessionId))
+        && get(/databases/$(database)/documents/cash_register_sessions/$(sessionId)).data.startedBy == request.auth.uid;
+    }
+
     function sameAccount(resourceAccountId) {
       return isAuthenticated()
         && (
@@ -37,35 +71,151 @@ service cloud.firestore {
     function isActiveId(id) {
       return id.matches('active_.*');
     }
+    
+    function isValidSessionId(id) {
+      return id.matches('active_.*') || id.matches('session_.*');
+    }
 
     // --- Collection Rules ---
 
     match /cash_register_sessions/{sessionId} {
-      allow read: if isAuthenticated() && (isAdmin() || sameAccount(getAccountIdFromSessionId(sessionId)));
-      
+      // Read rules: Allow reading for authenticated users in same account
+      // Admin can read all, others can read their account's sessions
+      allow read, list: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource != null 
+          && sameAccount(resource.data.accountId) 
+          && (
+            isCashierForBranch(resource.data.branchId) 
+            || isManagerForBranch(resource.data.branchId)
+            || request.auth.uid == resource.data.startedBy
+          )
+        )
+        // Allow reading sessions that don't exist yet (for transactions)
+        || (
+          resource == null 
+          && isAuthenticated()
+          && (
+            request.auth.token.accountId != null
+            || (
+              exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+            )
+          )
+        )
+      );
+
+      // Create: authenticated users may create sessions with valid IDs
+      // - "session_*" IDs for actual cash register sessions
+      // - "active_*" IDs for pointer documents that reference the active session
       allow create: if isAuthenticated()
-        && isActiveId(sessionId)
-        && request.resource.data.status == 'open'
-        && sameAccount(request.resource.data.accountId);
+        && isValidSessionId(sessionId)
+        && sameAccount(request.resource.data.accountId)
+        && (
+          isAdmin() 
+          || isManagerForBranch(request.resource.data.branchId) 
+          || isCashierForBranch(request.resource.data.branchId)
+        )
+        && (
+          // For actual session documents
+          (
+            sessionId.matches('session_.*')
+            && request.resource.data.status == 'open'
+            && request.resource.data.startedBy == request.auth.uid
+          )
+          // For active pointer documents
+          || (
+            sessionId.matches('active_.*')
+            && request.resource.data.activeSessionId != null
+          )
+        );
+      // Update: allow when admin OR manager for branch OR cashier for branch OR the session owner acting while session is open
+      // Also allow updates when creating sessions (tx.set on existing documents)
+      allow update: if isAuthenticated() && (
+        isAdmin()
+        || (
+          sameAccount(request.resource.data.accountId) && (
+            isManagerForBranch(request.resource.data.branchId)
+            || isCashierForBranch(request.resource.data.branchId)
+            || request.auth.uid == request.resource.data.startedBy
+          )
+        )
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && resource.data.status == 'open' && (
+            isSessionStartedByCaller(sessionId) 
+            || isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+          )
+        )
+      );
 
-      allow update: if isAuthenticated() && (isAdmin() || (sameAccount(resource.data.accountId) && resource.data.status == 'open'));
-
-      allow delete: if false;
+      // Deletes only for admins
+      allow delete: if isAdmin();
     }
 
     match /cash_register_movements/{movementId} {
+      // Create: only allowed if session exists and caller is allowed to act on that session
       allow create: if isAuthenticated()
         && exists(/databases/$(database)/documents/cash_register_sessions/$(request.resource.data.sessionId))
-        && sameAccount(get(/databases/$(database)/documents/cash_register_sessions/$(request.resource.data.sessionId)).data.accountId)
+        && (
+          isAdmin()
+          || isSessionStartedByCaller(request.resource.data.sessionId)
+          || (
+            isManagerForBranch(get(/databases/$(database)/documents/cash_register_sessions/$(request.resource.data.sessionId)).data.branchId)
+            || isCashierForBranch(get(/databases/$(database)/documents/cash_register_sessions/$(request.resource.data.sessionId)).data.branchId)
+          )
+        )
         && request.resource.data.accountId == get(/databases/$(database)/documents/cash_register_sessions/$(request.resource.data.sessionId)).data.accountId;
 
-      allow read: if isAuthenticated() && (isAdmin() || sameAccount(resource.data.accountId));
+      // Read movements: determine access by inspecting the parent session document
+      allow read: if isAuthenticated() && (
+        isAdmin()
+        || (
+          exists(/databases/$(database)/documents/cash_register_sessions/$(resource.data.sessionId))
+          && (
+            // manager or cashier for branch
+            (
+              (isManagerForBranch(get(/databases/$(database)/documents/cash_register_sessions/$(resource.data.sessionId)).data.branchId) 
+               || isCashierForBranch(get(/databases/$(database)/documents/cash_register_sessions/$(resource.data.sessionId)).data.branchId))
+              && sameAccount(get(/databases/$(database)/documents/cash_register_sessions/$(resource.data.sessionId)).data.accountId)
+            )
+            // session owner
+            || (get(/databases/$(database)/documents/cash_register_sessions/$(resource.data.sessionId)).data.startedBy == request.auth.uid)
+          )
+        )
+      );
+
       allow update, delete: if isAdmin();
     }
 
     match /cash_register_reports/{reportId} {
-      allow create: if isAuthenticated() && sameAccount(request.resource.data.sessionSnapshot.accountId);
-      allow read: if isAuthenticated() && (isAdmin() || sameAccount(resource.data.accountId));
+      // Reports are created at close time. Creation allowed if caller belonged to the account (closed session) or admin.
+      allow create: if isAuthenticated() && (
+        isAdmin()
+        || (request.resource.data.sessionSnapshot != null && sameAccount(request.resource.data.sessionSnapshot.accountId))
+      );
+
+      // Read: admin sees all; manager sees branch reports; cashier sees reports for their branch too
+      allow read, list: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource.data != null && sameAccount(resource.data.accountId) && (
+            isManagerForBranch(resource.data.sessionSnapshot.branchId)
+            || isCashierForBranch(resource.data.sessionSnapshot.branchId)
+          )
+        )
+        || (resource.data != null && resource.data.sessionSnapshot != null && resource.data.sessionSnapshot.startedBy == request.auth.uid)
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+
       allow update, delete: if isAdmin();
     }
 
@@ -77,23 +227,86 @@ service cloud.firestore {
     }
 
     match /products/{productId} {
-      allow read, list: if isAuthenticated() && (isAdmin() || sameAccount(resource.data.accountId));
+      allow read, list: if isAuthenticated() && (
+        isAdmin() 
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && (
+            isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
       allow create, update, delete: if isAdmin();
     }
 
     match /sales/{saleId} {
-      allow read: if isAuthenticated() && (isAdmin() || sameAccount(resource.data.accountId));
-      allow create: if isAuthenticated() && sameAccount(request.resource.data.accountId);
+      allow read, list: if isAuthenticated() && (
+        isAdmin() 
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && (
+            isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+      allow create: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || isManagerForBranch(request.resource.data.branchId)
+        || isCashierForBranch(request.resource.data.branchId)
+      );
       allow update, delete: if isAdmin();
     }
 
     match /branches/{branchId} {
-      allow read: if isAuthenticated() && (isAdmin() || sameAccount(resource.data.accountId));
+      allow read, list: if isAuthenticated() && (
+        isAdmin() 
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && (
+            isCashierForBranch(branchId)
+            || isManagerForBranch(branchId)
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
       allow create, update, delete: if isAdmin();
     }
 
     match /customers/{customerId} {
-      allow read: if isAuthenticated() && (isAdmin() || sameAccount(resource.data.accountId));
+      allow read, list: if isAuthenticated() && (
+        isAdmin() 
+        || (resource.exists() && sameAccount(resource.data.accountId))
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
       allow create, update, delete: if isAuthenticated() && sameAccount(request.resource.data.accountId);
     }
 

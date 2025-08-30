@@ -153,17 +153,30 @@ app.post('/createUserForAccount', async (req, res) => {
       throw err;
     }
 
-    // Optionally set custom claim for admin/owner
-		// Always set accountId as a custom claim so security rules can validate without reading users/{uid}
-		try {
-			const claims = { accountId };
-			if (role === 'admin' || role === 'owner') claims.admin = true;
-			await admin.auth().setCustomUserClaims(userRecord.uid, claims);
-		} catch (e) {
-			console.warn('Failed to set custom claims for', userRecord.uid, e && e.message);
-		}
-
-    // If password was not provided, generate a password reset link, attempt to email it, and return result
+    // Set custom claims for all users with role, branchId, and accountId
+    // This ensures security rules can validate permissions without reading users/{uid} document
+    try {
+      const claims = {
+        accountId,
+        role,
+      };
+      
+      // Add branchId if provided (for managers and cashiers)
+      if (branchId) {
+        claims.branchId = branchId;
+      }
+      
+      // Set admin flag for owners and admins
+      if (role === 'admin' || role === 'owner') {
+        claims.admin = true;
+      }
+      
+      await admin.auth().setCustomUserClaims(userRecord.uid, claims);
+      console.log('Custom claims set for user:', userRecord.uid, claims);
+    } catch (e) {
+      console.error('Failed to set custom claims for', userRecord.uid, e && e.message);
+      // Don't throw here - user was created successfully, claims can be set later if needed
+    }    // If password was not provided, generate a password reset link, attempt to email it, and return result
     if (!password || password.length === 0) {
       // Preferred: ask Firebase to send the OOB (PASSWORD_RESET) via REST API
       if (FIREBASE_API_KEY) {
@@ -323,10 +336,12 @@ app.post('/publicSignup', async (req, res) => {
     // create Auth user as owner
     const userRecord = await admin.auth().createUser({ email, password, displayName: ownerName });
 
-    // set custom claim admin
-    await admin.auth().setCustomUserClaims(userRecord.uid, { admin: true });
-
-		// create users doc
+    // set custom claims with role, accountId, and admin flag
+    await admin.auth().setCustomUserClaims(userRecord.uid, { 
+      admin: true,
+      role: 'owner',
+      accountId 
+    });		// create users doc
 		try {
 			await db.doc(`users/${userRecord.uid}`).set({
 				email,
