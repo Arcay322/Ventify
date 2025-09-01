@@ -54,6 +54,9 @@ export default function DiscountsSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   
+  // Memorize permission checks to avoid unnecessary re-renders
+  const canAccess = userDoc?.role === 'owner' || userDoc?.role === 'admin';
+  
   const [discountSettings, setDiscountSettings] = useState<DiscountSettings>({
     cashierMaxDiscount: 20,
     cashierMaxDiscountType: 'amount',
@@ -67,11 +70,9 @@ export default function DiscountsSettingsPage() {
   const [promotions, setPromotions] = useState<PromotionRule[]>([]);
 
   const loadSettings = useCallback(async () => {
-    if (loading) return; // Evitar múltiples llamadas
+    if (!userDoc?.accountId) return;
     
     try {
-      if (!userDoc?.accountId) return;
-      
       setLoading(true);
       const settingsRef = doc(db, 'accounts', userDoc.accountId, 'settings', 'discounts');
       const settingsDoc = await getDoc(settingsRef);
@@ -85,20 +86,15 @@ export default function DiscountsSettingsPage() {
       
     } catch (error) {
       console.error('Error loading discount settings:', error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las configuraciones.",
-        variant: "destructive"
-      });
     } finally {
       setLoading(false);
     }
-  }, [loading, userDoc?.accountId, toast]);
+  }, [userDoc?.accountId]);
 
   useEffect(() => {
     if (!userDoc?.accountId) return;
     
-    if (!isOwner() && !isAdmin()) {
+    if (!canAccess) {
       toast({
         title: "Acceso denegado",
         description: "Solo los administradores y propietarios pueden acceder a esta sección.",
@@ -109,7 +105,7 @@ export default function DiscountsSettingsPage() {
     }
     
     loadSettings();
-  }, [userDoc?.accountId, isOwner, isAdmin, toast, loadSettings]);
+  }, [userDoc?.accountId, canAccess, loadSettings]);
 
   const saveSettings = async () => {
     try {
@@ -137,7 +133,7 @@ export default function DiscountsSettingsPage() {
     }
   };
 
-  if (!isOwner() && !isAdmin()) {
+  if (!canAccess) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
