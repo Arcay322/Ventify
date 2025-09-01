@@ -91,8 +91,8 @@ INFORMACIÓN DEL TURNO:
 EFECTIVO:
 - Monto Inicial: S/${(session?.initialAmount || 0).toFixed(2)}
 - Ventas en Efectivo: S/${(session?.cashSales || 0).toFixed(2)}
-- Otros Ingresos: S/${movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0).toFixed(2)}
-- Retiros: S/${Math.abs(movements.filter(m => m.amount < 0).reduce((s, m) => s + m.amount, 0)).toFixed(2)}
+- Otros Ingresos: S/${movements.filter((m: any) => m.amount > 0).reduce((s: number, m: any) => s + m.amount, 0).toFixed(2)}
+- Retiros: S/${Math.abs(movements.filter((m: any) => m.amount < 0).reduce((s: number, m: any) => s + m.amount, 0)).toFixed(2)}
 - Total Esperado: S/${(reportData?.expectedAmount || 0).toFixed(2)}
 - Total Contado: S/${(reportData?.countedAmount || 0).toFixed(2)}
 - Diferencia: S/${(reportData?.difference || 0).toFixed(2)} ${(reportData?.difference || 0) >= 0 ? '(Sobrante)' : '(Faltante)'}
@@ -106,7 +106,7 @@ OTRAS VENTAS:
         MOVIMIENTOS DE EFECTIVO
 ==========================================
 
-${movements.length === 0 ? 'No hay movimientos registrados.' : movements.map(m => 
+${movements.length === 0 ? 'No hay movimientos registrados.' : movements.map((m: any) => 
   `${format(new Date(m.createdAt?.seconds * 1000 || Date.now()), 'HH:mm:ss')} - ${m.reason || (m.amount > 0 ? 'Ingreso' : 'Retiro')}: S/${m.amount.toFixed(2)}`
 ).join('\n')}
 
@@ -223,11 +223,11 @@ Sistema: Ventify POS
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Otros Ingresos:</span>
-                      <span className="text-green-600">+ S/{movements.filter(m => m.amount > 0).reduce((s, m) => s + m.amount, 0).toFixed(2)}</span>
+                      <span className="text-green-600">+ S/{movements.filter((m: any) => m.amount > 0).reduce((s: number, m: any) => s + m.amount, 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Retiros:</span>
-                      <span className="text-red-600">- S/{Math.abs(movements.filter(m => m.amount < 0).reduce((s, m) => s + m.amount, 0)).toFixed(2)}</span>
+                      <span className="text-red-600">- S/{Math.abs(movements.filter((m: any) => m.amount < 0).reduce((s: number, m: any) => s + m.amount, 0)).toFixed(2)}</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between font-semibold">
@@ -289,7 +289,7 @@ Sistema: Ventify POS
                 <p className="text-muted-foreground text-center py-4">No hay movimientos registrados.</p>
               ) : (
                 <div className="space-y-2">
-                  {movements.map((movement, index) => (
+                  {movements.map((movement: any, index: number) => (
                     <div key={index} className="flex justify-between items-center py-2 border-b last:border-b-0">
                       <div>
                         <div className="font-medium">{movement.reason || (movement.amount > 0 ? 'Ingreso' : 'Retiro')}</div>

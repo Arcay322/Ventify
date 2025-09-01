@@ -22,13 +22,26 @@ const productFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Product => {
 
 export const getProducts = (callback: (products: Product[]) => void, accountId?: string) => {
     const productsCollection = collection(db, PRODUCTS_COLLECTION);
+    
+    // Filtrar por accountId solo si está disponible, sino mostrar todos (para compatibilidad)
     const q = accountId ? query(productsCollection, where('accountId', '==', accountId)) : productsCollection;
-        const unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
-        const products = snapshot.docs.map(productFromDoc).sort((a: Product, b: Product) => a.name.localeCompare(b.name));
+    
+    const unsubscribe = onSnapshot(q as any, (snapshot: QuerySnapshot<DocumentData>) => {
+        let products = snapshot.docs.map(productFromDoc).sort((a: Product, b: Product) => a.name.localeCompare(b.name));
         callback(products);
-        }, (err) => {
-            console.error('onSnapshot error (products query)', { errorCode: err && err.code, message: err && err.message });
-        });
+    }, (err) => {
+        console.error('onSnapshot error (products query)', { errorCode: err && err.code, message: err && err.message });
+        
+        // Si hay error con el filtro, intentar sin filtro
+        if (accountId && err.code === 'permission-denied') {
+            console.log('📦 Permission denied with accountId filter, trying without filter');
+            const fallbackQ = productsCollection;
+            return onSnapshot(fallbackQ as any, (snapshot: QuerySnapshot<DocumentData>) => {
+                const products = snapshot.docs.map(productFromDoc).sort((a: Product, b: Product) => a.name.localeCompare(b.name));
+                callback(products);
+            });
+        }
+    });
     return unsubscribe;
 };
 

@@ -1,6 +1,7 @@
 # Project Structure
 
 ## Root Directory
+
 ```
 ├── src/                    # Main application source code
 ├── functions/              # Firebase Cloud Functions
@@ -13,6 +14,7 @@
 ## Source Code Organization (`src/`)
 
 ### Application Structure
+
 - `src/app/` - Next.js App Router pages and layouts
   - `(dashboard)/` - Protected dashboard routes
   - `auth/` - Authentication pages
@@ -27,7 +29,9 @@
 - `src/ai/` - Genkit AI flows and configurations
 
 ### Service Layer Pattern
+
 Each business domain has its own service file:
+
 - `auth-service.ts` - Authentication operations
 - `branch-service.ts` - Branch management
 - `cash-register-service.ts` - POS operations
@@ -39,7 +43,9 @@ Each business domain has its own service file:
 - `user-service.ts` - User management
 
 ### Type Definitions
+
 Strongly typed interfaces for all entities:
+
 - `branch.d.ts` - Branch/location types
 - `cash-register.d.ts` - POS session types
 - `customer.d.ts` - Customer data types
@@ -48,12 +54,15 @@ Strongly typed interfaces for all entities:
 - `user.d.ts` - User and role types
 
 ## Firebase Functions (`functions/`)
+
 - `index.js` - Main functions entry point
 - `package.json` - Functions dependencies (Node.js 20)
 - Server-side user management and account operations
 
 ## Scripts Directory (`scripts/`)
+
 Utility scripts for development and maintenance:
+
 - User management scripts
 - Session management utilities
 - Account provisioning tools
@@ -61,6 +70,7 @@ Utility scripts for development and maintenance:
 - `tests/` - Smoke tests for core functionality
 
 ## Configuration Files
+
 - `next.config.ts` - Next.js configuration
 - `tailwind.config.ts` - TailwindCSS setup
 - `tsconfig.json` - TypeScript configuration
@@ -69,6 +79,7 @@ Utility scripts for development and maintenance:
 - `.env.example` - Environment variables template
 
 ## Naming Conventions
+
 - **Files**: kebab-case for components, camelCase for utilities
 - **Components**: PascalCase React components
 - **Services**: Descriptive names ending in `-service.ts`
@@ -76,6 +87,7 @@ Utility scripts for development and maintenance:
 - **Hooks**: Prefix with `use-` (e.g., `use-auth.tsx`)
 
 ## Import Patterns
+
 - Use `@/` alias for src directory imports
 - Group imports: external libraries, internal modules, relative imports
 - Prefer named exports over default exports for utilities

@@ -25,7 +25,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from '@/hooks/use-toast';
 import { subscribeSettings, saveSettings } from '@/services/settings-service';
 import { ProtectedAdmin } from '@/hooks/use-auth';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Percent, Users, Settings } from 'lucide-react';
+import Link from 'next/link';
 import { Textarea } from '@/components/ui/textarea';
 
 const settingsSchema = z.object({
@@ -72,6 +73,55 @@ export default function SettingsPage() {
         <ProtectedAdmin fallback={<div className="p-6">Acceso denegado</div>}>
         <div className="flex flex-col gap-8">
             <h1 className="text-3xl font-bold tracking-tight">Configuración del Sistema</h1>
+            
+            {/* Enlaces rápidos a otras configuraciones */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Link href="/settings/discounts">
+                    <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                        <CardContent className="p-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-primary/10 rounded-lg">
+                                    <Percent className="h-5 w-5 text-primary" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold">Descuentos y Promociones</h3>
+                                    <p className="text-sm text-muted-foreground">Configura límites y promociones</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </Link>
+                
+                <Link href="/users">
+                    <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                        <CardContent className="p-6">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-100 rounded-lg">
+                                    <Users className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold">Gestión de Usuarios</h3>
+                                    <p className="text-sm text-muted-foreground">Administra roles y permisos</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </Link>
+                
+                <Card className="opacity-50">
+                    <CardContent className="p-6">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-100 rounded-lg">
+                                <Settings className="h-5 w-5 text-gray-600" />
+                            </div>
+                            <div>
+                                <h3 className="font-semibold">Configuraciones Avanzadas</h3>
+                                <p className="text-sm text-muted-foreground">Próximamente</p>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
 
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)}>

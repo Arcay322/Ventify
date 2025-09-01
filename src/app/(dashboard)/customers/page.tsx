@@ -33,7 +33,8 @@ export default function CustomersPage() {
   const auth = useAuth();
   useEffect(() => {
     const accountId = (auth.userDoc && auth.userDoc.accountId) as string | undefined | null;
-    const unsubscribe = getCustomers(accountId, setCustomers);
+    if (!accountId) return;
+    const unsubscribe = getCustomers(setCustomers, accountId);
     return () => unsubscribe && unsubscribe();
   }, [auth.userDoc]);
 

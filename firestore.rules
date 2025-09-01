@@ -152,6 +152,32 @@ service cloud.firestore {
 
       // Deletes only for admins
       allow delete: if isAdmin();
+      
+      // Allow verify operations for transactions
+      allow get: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource != null 
+          && sameAccount(resource.data.accountId) 
+          && (
+            isCashierForBranch(resource.data.branchId) 
+            || isManagerForBranch(resource.data.branchId)
+            || request.auth.uid == resource.data.startedBy
+          )
+        )
+        // Allow reading sessions that don't exist yet (for transactions)
+        || (
+          resource == null 
+          && isAuthenticated()
+          && (
+            request.auth.token.accountId != null
+            || (
+              exists(/databases/$(database)/documents/users/$(request.auth.uid))
+              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+            )
+          )
+        )
+      );
     }
 
     match /cash_register_movements/{movementId} {
@@ -230,10 +256,7 @@ service cloud.firestore {
       allow read, list: if isAuthenticated() && (
         isAdmin() 
         || (
-          resource.exists() && sameAccount(resource.data.accountId) && (
-            isManagerForBranch(resource.data.branchId)
-            || isCashierForBranch(resource.data.branchId)
-          )
+          resource.exists() && sameAccount(resource.data.accountId)
         )
         // Allow queries by authenticated users (resource may not exist during queries)
         || (
@@ -244,7 +267,17 @@ service cloud.firestore {
           )
         )
       );
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+      // Allow stock updates for cashiers and managers (for sales transactions)
+      // Products don't have branchId field, they have accountId and stock per branch
+      allow update: if isAuthenticated() && (
+        isAdmin()
+        || (
+          sameAccount(request.resource.data.accountId)
+          // Only allow updating the stock field
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock'])
+        )
+      );
     }
 
     match /sales/{saleId} {
@@ -318,6 +351,24 @@ service cloud.firestore {
     match /accounts/{accountId} {
       allow read: if isAuthenticated() && (isAdmin() || sameAccount(accountId));
       allow write: if isAdmin();
+    }
+
+    match /sale_counters/{counterId} {
+      // Counter ID format: accountId_branchId
+      // Allow read/write for authenticated users in the same account
+      allow read, create, update: if isAuthenticated() && (
+        isAdmin()
+        || (
+          // Check if the counter belongs to the user's account
+          // We'll validate this in the application code instead of parsing the ID here
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+      allow delete: if isAdmin();
     }
   }
 }

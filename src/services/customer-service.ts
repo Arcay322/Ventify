@@ -9,6 +9,7 @@ const customerFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Customer => 
   return {
     id: doc.id,
     name: data.name,
+    dni: data.dni,
     email: data.email,
     phone: data.phone,
     totalPurchases: data.totalPurchases || 0,
@@ -19,7 +20,7 @@ const customerFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Customer => 
 // Subscribe to customers for a specific accountId only.
 // Listening the entire collection without filtering may fail due to security rules
 // if there are documents that don't belong to the caller's account.
-export const getCustomers = (accountId: string | null | undefined, callback: (customers: Customer[]) => void) => {
+export const getCustomers = (callback: (customers: Customer[]) => void, accountId?: string) => {
   if (!accountId) {
     console.warn('getCustomers: no accountId provided, returning empty list');
     callback([]);

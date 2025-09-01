@@ -98,7 +98,7 @@ export function ReturnModal({ sale, isOpen, onOpenChange }: ReturnModalProps) {
         <DialogHeader>
           <DialogTitle>Procesar Devolución</DialogTitle>
           <DialogDescription>
-            Selecciona los productos de la venta <span className="font-mono font-semibold">{sale?.id}</span> para devolverlos al inventario.
+            Selecciona los productos de la venta <span className="font-mono font-semibold">#{sale?.saleNumber || sale?.id.slice(-6)}</span> para devolverlos al inventario.
           </DialogDescription>
         </DialogHeader>
         

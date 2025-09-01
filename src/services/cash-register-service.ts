@@ -167,14 +167,30 @@ export const getActiveCashRegisterSession = (branchId: string | undefined, accou
     return () => { try { unsubscribe(); } catch (e) { } };
 };
 
-export const addSaleToActiveSession = async (branchId: string, accountId: string | undefined, sale: { total: number; paymentMethod: string }) => {
+export const addSaleToActiveSession = async (branchId: string, accountId: string | undefined, sale: { total: number; paymentMethod: string; itemCount?: number; customerName?: string; saleNumber?: number }) => {
     const resolvedAccountId = await resolveAccountIdFromAuth(accountId);
     if (!resolvedAccountId) throw new Error('No accountId available to add sale to session');
-    const sessionId = activeSessionId(branchId, resolvedAccountId);
-    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, sessionId);
+    const activeId = activeSessionId(branchId, resolvedAccountId);
+    const activeRef = doc(db, CASH_REGISTER_COLLECTION, activeId);
+    const activeSnap = await getDoc(activeRef);
+    if (!activeSnap.exists()) {
+        // No hay sesión activa - esto es normal si no se ha abierto caja
+        return;
+    }
+
+    // Get the actual session ID from the active pointer
+    const actualSessionId = activeSnap.data()?.activeSessionId;
+    if (!actualSessionId) {
+        console.warn('Active session document exists but has no activeSessionId');
+        return;
+    }
+
+    // Update the actual session document
+    const sessionRef = doc(db, CASH_REGISTER_COLLECTION, actualSessionId);
     const sessionSnap = await getDoc(sessionRef);
     if (!sessionSnap.exists() || sessionSnap.data()?.status !== 'open') {
-        throw new Error('No hay una sesión de caja activa para registrar la venta.');
+        console.warn('Actual session does not exist or is not open');
+        return;
     }
 
     const updateData: { [key: string]: any } = {
@@ -190,6 +206,26 @@ export const addSaleToActiveSession = async (branchId: string, accountId: string
     }
 
     await updateDoc(sessionRef, updateData);
+
+    // Registrar movimiento de caja individual para todas las ventas
+    let description = `Venta - ${sale.paymentMethod}`;
+    
+    // Agregar número de items si está disponible
+    if (sale.itemCount && sale.itemCount > 0) {
+        description += ` (${sale.itemCount} item${sale.itemCount > 1 ? 's' : ''})`;
+    }
+    
+    // Agregar cliente si está disponible
+    if (sale.customerName) {
+        description += ` - ${sale.customerName}`;
+    }
+    
+    // Agregar número de venta si está disponible
+    if (sale.saleNumber) {
+        description += ` #${sale.saleNumber.toString()}`;
+    }
+    
+    await createCashMovement(actualSessionId, sale.total, description, resolvedAccountId);
 };
 
 /**

@@ -5,7 +5,9 @@ import { useRef } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from './ui/separator';
@@ -21,7 +23,7 @@ interface ReceiptModalProps {
 
 const ReceiptContent = ({ saleDetails }: { saleDetails: ReceiptModalProps['saleDetails'] }) => {
     if (!saleDetails) return null;
-    const { id, items, subtotal, tax, total, discount, paymentMethod } = saleDetails;
+    const { id, saleNumber, items, subtotal, tax, total, discount, paymentMethod, customerName, customerEmail, customerPhone } = saleDetails;
     
     return (
         <div className="text-sm font-mono bg-white text-black p-6">
@@ -37,20 +39,32 @@ const ReceiptContent = ({ saleDetails }: { saleDetails: ReceiptModalProps['saleD
 
             <div className="flex justify-between">
                 <span>Nro. Venta:</span>
-                <span className="font-bold">{id}</span>
+                <span className="font-bold">{saleNumber ? saleNumber.toString() : id.slice(-6)}</span>
             </div>
             <div className="flex justify-between">
                 <span>Fecha:</span>
-                <span>{new Date().toLocaleDateString('es-ES')}</span>
+                <span>{new Date(saleDetails.date).toLocaleDateString('es-ES')}</span>
             </div>
             <div className="flex justify-between">
                 <span>Hora:</span>
-                <span>{new Date().toLocaleTimeString('es-ES')}</span>
+                <span>{new Date(saleDetails.date).toLocaleTimeString('es-ES')}</span>
             </div>
              <div className="flex justify-between">
                 <span>Método Pago:</span>
                 <span>{paymentMethod}</span>
             </div>
+            
+            {customerName && (
+                <>
+                    <Separator className="my-2 border-dashed border-black" />
+                    <div className="text-center">
+                        <div className="font-semibold">CLIENTE</div>
+                        <div>{customerName}</div>
+                        {customerEmail && <div>{customerEmail}</div>}
+                        {customerPhone && <div>{customerPhone}</div>}
+                    </div>
+                </>
+            )}
             
             <Separator className="my-2 border-dashed border-black" />
             
@@ -62,11 +76,18 @@ const ReceiptContent = ({ saleDetails }: { saleDetails: ReceiptModalProps['saleD
                     <div className="text-right">TOTAL</div>
                 </div>
                 {items.map(item => (
-                    <div key={item.id} className="grid grid-cols-5 gap-2">
-                        <div className="col-span-2">{item.name}</div>
-                        <div>{item.quantity}</div>
-                        <div>S/{item.price.toFixed(2)}</div>
-                        <div className="text-right">S/{(item.price * item.quantity).toFixed(2)}</div>
+                    <div key={item.id}>
+                        <div className="grid grid-cols-5 gap-2">
+                            <div className="col-span-2">{item.name}</div>
+                            <div>{item.quantity}</div>
+                            <div>S/{item.price.toFixed(2)}</div>
+                            <div className="text-right">S/{(item.price * item.quantity).toFixed(2)}</div>
+                        </div>
+                        {(item as any).modifiedPrice && (
+                            <div className="text-xs text-center">
+                                (Precio original: S/{((item as any).originalPrice || item.price).toFixed(2)})
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>
@@ -112,7 +133,11 @@ export function ReceiptModal({ isOpen, onOpenChange, saleDetails }: ReceiptModal
   
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md p-0">
+      <DialogContent className="sm:max-w-md p-0" aria-describedby="receipt-description">
+        <DialogTitle className="sr-only">Recibo de Venta</DialogTitle>
+        <DialogDescription id="receipt-description" className="sr-only">
+          Recibo detallado de la venta realizada con opciones para imprimir
+        </DialogDescription>
         <div ref={componentRef}>
             <ReceiptContent saleDetails={saleDetails} />
         </div>
