@@ -370,5 +370,77 @@ service cloud.firestore {
       );
       allow delete: if isAdmin();
     }
+
+    match /transfers/{transferId} {
+      // Read transfers: admin or users in same account who are managers/cashiers for relevant branches
+      allow read, list: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && (
+            // Manager or cashier for source branch (can see outgoing transfers)
+            isManagerForBranch(resource.data.sourceBranchId)
+            || isCashierForBranch(resource.data.sourceBranchId)
+            // Manager or cashier for destination branch (can see incoming transfers)
+            || isManagerForBranch(resource.data.destinationBranchId)
+            || isCashierForBranch(resource.data.destinationBranchId)
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+
+      // Create transfers: cashiers and managers can create transfers from their branch
+      allow create: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || isManagerForBranch(request.resource.data.sourceBranchId)
+        || isCashierForBranch(request.resource.data.sourceBranchId)
+      ) && (
+        // Initial status must be 'pending'
+        request.resource.data.status == 'pending'
+        // Requesting user must be set
+        && request.resource.data.requestedBy == request.auth.uid
+      );
+
+      // Update transfers: only managers can approve/reject, and only for their branch
+      // Anyone involved can update status to 'in_transit' or 'completed'
+      allow update: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || (
+          // Managers can approve/reject transfers coming to their branch
+          (
+            (request.resource.data.status == 'approved' || request.resource.data.status == 'rejected')
+            && resource.data.status == 'pending'
+            && isManagerForBranch(resource.data.destinationBranchId)
+          )
+          // Cashiers/managers from source branch can mark as in_transit
+          || (
+            request.resource.data.status == 'in_transit'
+            && resource.data.status == 'approved'
+            && (
+              isManagerForBranch(resource.data.sourceBranchId)
+              || isCashierForBranch(resource.data.sourceBranchId)
+            )
+          )
+          // Cashiers/managers from destination branch can mark as completed
+          || (
+            request.resource.data.status == 'completed'
+            && resource.data.status == 'in_transit'
+            && (
+              isManagerForBranch(resource.data.destinationBranchId)
+              || isCashierForBranch(resource.data.destinationBranchId)
+            )
+          )
+        )
+      );
+
+      // Delete transfers: only admins can delete
+      allow delete: if isAdmin();
+    }
   }
 }

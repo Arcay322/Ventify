@@ -12,7 +12,10 @@ export type Permission =
   | 'manage_users'
   | 'manage_branches'
   | 'view_reports'
-  | 'manage_cash_register';
+  | 'manage_cash_register'
+  | 'request_transfer'
+  | 'approve_transfer'
+  | 'manage_transfers';
 
 export interface RolePermissions {
   owner: Permission[];
@@ -32,7 +35,10 @@ const ROLE_PERMISSIONS: RolePermissions = {
     'manage_users',
     'manage_branches',
     'view_reports',
-    'manage_cash_register'
+    'manage_cash_register',
+    'request_transfer',
+    'approve_transfer',
+    'manage_transfers'
   ],
   admin: [
     'register_sale',
@@ -44,24 +50,30 @@ const ROLE_PERMISSIONS: RolePermissions = {
     'manage_users',
     'manage_branches',
     'view_reports',
-    'manage_cash_register'
+    'manage_cash_register',
+    'request_transfer',
+    'approve_transfer',
+    'manage_transfers'
   ],
   manager: [
     'register_sale',
     'associate_customer',
-    'modify_price', // Configurable por admin
-    'apply_discount', // Configurable por admin
+    'modify_price',
+    'apply_discount',
     'process_return',
     'manage_products',
     'view_reports',
-    'manage_cash_register'
+    'manage_cash_register',
+    'request_transfer',
+    'approve_transfer',
+    'manage_transfers'
   ],
   cashier: [
     'register_sale',
     'associate_customer',
-    'apply_discount', // Cajeros pueden aplicar descuentos limitados
-    'process_return'
-    // No puede modificar precios directamente
+    'apply_discount',
+    'process_return',
+    'request_transfer'
   ]
 };
 
@@ -105,6 +117,106 @@ export function usePermissions() {
     return hasPermission('view_reports');
   };
 
+  const canRequestTransfer = (): boolean => {
+    return hasPermission('request_transfer');
+  };
+
+  const canApproveTransfer = (): boolean => {
+    return hasPermission('approve_transfer');
+  };
+
+  const canManageTransfers = (): boolean => {
+    return hasPermission('manage_transfers');
+  };
+
+  // Funciones específicas para transferencias con lógica de negocio
+  const canRequestTransferFromBranch = (branchId: string): boolean => {
+    const role = userDoc?.role;
+    const userBranchId = userDoc?.branchId;
+    
+    // Owner y admin pueden solicitar desde cualquier sucursal
+    if (role === 'owner' || role === 'admin') {
+      return true;
+    }
+    
+    // Manager y cashier solo pueden solicitar desde su sucursal
+    if (role === 'manager' || role === 'cashier') {
+      return userBranchId === branchId;
+    }
+    
+    return false;
+  };
+
+  const canApproveTransferToBranch = (branchId: string): boolean => {
+    const role = userDoc?.role;
+    const userBranchId = userDoc?.branchId;
+    
+    // Owner y admin pueden aprobar transferencias a cualquier sucursal
+    if (role === 'owner' || role === 'admin') {
+      return true;
+    }
+    
+    // Manager solo puede aprobar transferencias que lleguen a su sucursal
+    if (role === 'manager') {
+      return userBranchId === branchId;
+    }
+    
+    // Cashier no puede aprobar transferencias
+    return false;
+  };
+
+  const canCreateDirectTransfer = (): boolean => {
+    const role = userDoc?.role;
+    // Solo owner y admin pueden crear transferencias directas sin solicitud
+    return role === 'owner' || role === 'admin';
+  };
+
+  const canViewTransfer = (transfer: { sourceBranchId: string; destinationBranchId: string }): boolean => {
+    const role = userDoc?.role;
+    const userBranchId = userDoc?.branchId;
+    
+    // Owner y admin pueden ver todas las transferencias
+    if (role === 'owner' || role === 'admin') {
+      return true;
+    }
+    
+    // Manager y cashier pueden ver transferencias donde su sucursal esté involucrada
+    if (role === 'manager' || role === 'cashier') {
+      return userBranchId === transfer.sourceBranchId || userBranchId === transfer.destinationBranchId;
+    }
+    
+    return false;
+  };
+
+  const canUpdateTransferStatus = (transfer: { status: string; sourceBranchId: string; destinationBranchId: string }, newStatus: string): boolean => {
+    const role = userDoc?.role;
+    const userBranchId = userDoc?.branchId;
+    
+    // Owner y admin pueden actualizar cualquier estado
+    if (role === 'owner' || role === 'admin') {
+      return true;
+    }
+    
+    // Transiciones específicas por rol
+    switch (newStatus) {
+      case 'approved':
+      case 'rejected':
+        // Solo managers pueden aprobar/rechazar, y solo para su sucursal de destino
+        return role === 'manager' && userBranchId === transfer.destinationBranchId && transfer.status === 'pending';
+      
+      case 'in_transit':
+        // Personal de la sucursal origen puede marcar como en tránsito
+        return (role === 'manager' || role === 'cashier') && userBranchId === transfer.sourceBranchId && transfer.status === 'approved';
+      
+      case 'completed':
+        // Personal de la sucursal destino puede marcar como completado
+        return (role === 'manager' || role === 'cashier') && userBranchId === transfer.destinationBranchId && transfer.status === 'in_transit';
+      
+      default:
+        return false;
+    }
+  };
+
   const getUserRole = (): string => {
     return userDoc?.role || 'guest';
   };
@@ -134,11 +246,21 @@ export function usePermissions() {
     canManageUsers,
     canManageProducts,
     canViewReports,
+    canRequestTransfer,
+    canApproveTransfer,
+    canManageTransfers,
+    // Funciones específicas para transferencias
+    canRequestTransferFromBranch,
+    canApproveTransferToBranch,
+    canCreateDirectTransfer,
+    canViewTransfer,
+    canUpdateTransferStatus,
     getUserRole,
     isOwner,
     isAdmin,
     isManager,
     isCashier,
-    userRole: userDoc?.role
+    userRole: userDoc?.role,
+    userBranchId: userDoc?.branchId
   };
 }

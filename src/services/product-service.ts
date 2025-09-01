@@ -59,3 +59,18 @@ export const saveProduct = async (product: Partial<Product> & { id?: string }) =
         return docRef.id;
     }
 };
+
+// Promise-based version for easier async/await usage
+export const getProductsAsync = async (accountId?: string): Promise<Product[]> => {
+  const productsCollection = collection(db, PRODUCTS_COLLECTION);
+  const q = accountId ? query(productsCollection, where('accountId', '==', accountId)) : productsCollection;
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(productFromDoc);
+};
+
+// Export as a service object for cleaner imports
+export const ProductService = {
+  getProducts,
+  getProductsAsync,
+  saveProduct
+};

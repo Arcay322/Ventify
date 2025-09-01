@@ -62,3 +62,20 @@ export const getBranchById = async (branchId: string) => {
   const snap = await getDoc(ref);
   return snap.exists() ? (snap.data() as any) : null;
 };
+
+// Promise-based version for easier async/await usage
+export const getBranchesAsync = async (accountId?: string): Promise<Branch[]> => {
+  const branchesCollection = collection(db, BRANCHES_COLLECTION);
+  const q = accountId ? query(branchesCollection, where('accountId', '==', accountId)) : branchesCollection;
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(branchFromDoc);
+};
+
+// Export as a service object for cleaner imports
+export const BranchService = {
+  getBranches,
+  getBranchesAsync,
+  saveBranch,
+  deleteBranch,
+  getBranchById
+};

@@ -33,6 +33,7 @@ import {
   Settings,
   Store,
   Users2,
+  ArrowRightLeft,
 } from "lucide-react";
 import React from "react";
 import { AuthProvider, useAuth } from '@/hooks/use-auth';
@@ -44,6 +45,7 @@ const navItems = [
   { href: "/products", label: "Productos", icon: Package },
   { href: "/inventory", label: "Inventario", icon: BarChart3 },
   { href: "/customers", label: "Clientes", icon: Users },
+  { href: "/transfers", label: "Transferencias", icon: ArrowRightLeft },
   { href: "/cash-management", label: "Caja", icon: Landmark },
   { href: "/branches", label: "Sucursales", icon: Store },
   { href: "/reports", label: "Informes", icon: FileText },
