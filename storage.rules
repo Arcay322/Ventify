@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Ventify
+// These rules secure the uploaded files and ensure proper access control
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Function to check if the user belongs to the same account
+    function belongsToAccount(accountId) {
+      return isAuthenticated() && (
+        request.auth.token.accountId == accountId
+      );
+    }
+
+    // Product images: products/{accountId}/{imageFile}
+    match /products/{accountId}/{imageFile} {
+      // Allow read for authenticated users of the same account
+      allow read: if isAuthenticated() && belongsToAccount(accountId);
+      
+      // Allow write (create/update/delete) for authenticated users of the same account
+      allow write: if isAuthenticated() && belongsToAccount(accountId) && (
+        // Validate file type and size
+        request.resource.size < 5 * 1024 * 1024 // Max 5MB
+        && request.resource.contentType.matches('image/.*') // Only images
+      );
+    }
+
+    // User profile images (future): users/{accountId}/{userId}/{imageFile}
+    match /users/{accountId}/{userId}/{imageFile} {
+      allow read: if isAuthenticated() && (
+        belongsToAccount(accountId) || request.auth.uid == userId
+      );
+      
+      allow write: if isAuthenticated() && (
+        belongsToAccount(accountId) && request.auth.uid == userId
+      ) && (
+        request.resource.size < 2 * 1024 * 1024 // Max 2MB for profile images
+        && request.resource.contentType.matches('image/.*')
+      );
+    }
+
+    // Deny all other paths by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

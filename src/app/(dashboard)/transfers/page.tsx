@@ -148,16 +148,30 @@ export default function TransfersPage() {
 
       toast({
         title: "Estado actualizado",
-        description: `La transferencia ha sido ${STATUS_LABELS[newStatus].toLowerCase()}`
+        description: newStatus === 'completed' 
+          ? `La transferencia ha sido completada y el stock ha sido actualizado`
+          : `La transferencia ha sido ${STATUS_LABELS[newStatus].toLowerCase()}`
       });
 
       // Recargar transferencias
       loadTransfers();
     } catch (error) {
       console.error('Error updating transfer status:', error);
+      
+      // Handle specific error types
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      
+      let description = "No se pudo actualizar el estado de la transferencia";
+      
+      if (errorMessage.includes('Insufficient stock')) {
+        description = "Stock insuficiente en la sucursal de origen para completar esta transferencia";
+      } else if (errorMessage.includes('Product not found')) {
+        description = "Uno o más productos de la transferencia no fueron encontrados";
+      }
+      
       toast({
         title: "Error",
-        description: "No se pudo actualizar el estado de la transferencia",
+        description,
         variant: "destructive"
       });
     }

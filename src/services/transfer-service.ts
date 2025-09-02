@@ -14,6 +14,7 @@ import {
 import { db } from '@/lib/firebase';
 import { Transfer, TransferRequest } from '@/types/transfer';
 import { BranchService } from './branch-service';
+import { applyAdjustments } from './inventory-service';
 
 export class TransferService {
   static async createTransfer(transferRequest: TransferRequest): Promise<string> {
@@ -154,6 +155,15 @@ export class TransferService {
       console.log('TransferService.updateTransferStatus called:', { transferId, newStatus, userId, additionalData });
       
       const transferRef = doc(db, 'transfers', transferId);
+      
+      // Get current transfer data to access products when completing
+      const transferDoc = await getDoc(transferRef);
+      if (!transferDoc.exists()) {
+        throw new Error('Transfer not found');
+      }
+      
+      const transferData = transferDoc.data() as Transfer;
+      
       const updateData: any = {
         status: newStatus
       };
@@ -172,7 +182,77 @@ export class TransferService {
         case 'completed':
           updateData.completedAt = serverTimestamp();
           updateData.receivedBy = userId;
-          // Aquí podríamos actualizar el stock automáticamente
+          
+          // Update stock when completing transfer
+          console.log('🔄 Starting stock update for completed transfer');
+          console.log('Transfer data:', transferData);
+          console.log('Products in transfer:', transferData.products);
+          
+          if (!transferData.products || transferData.products.length === 0) {
+            console.warn('⚠️  No products found in transfer - skipping stock update');
+            break;
+          }
+          
+          // Pre-validate stock availability before making any changes
+          console.log('📋 Pre-validating stock availability...');
+          
+          for (const product of transferData.products) {
+            console.log(`🔍 Checking stock for ${product.name} (${product.productId})`);
+            
+            // Get current product data
+            const productRef = doc(db, 'products', product.productId);
+            const productDoc = await getDoc(productRef);
+            
+            if (!productDoc.exists()) {
+              throw new Error(`Product ${product.name} not found in database`);
+            }
+            
+            const productData = productDoc.data();
+            const currentStock = productData.stock?.[transferData.sourceBranchId] || 0;
+            
+            console.log(`   Current stock in source branch: ${currentStock}`);
+            console.log(`   Required for transfer: ${product.quantity}`);
+            
+            if (currentStock < product.quantity) {
+              throw new Error(`Stock insuficiente para ${product.name}. Disponible: ${currentStock}, Requerido: ${product.quantity}`);
+            }
+          }
+          
+          console.log('✅ Stock validation passed, proceeding with adjustments');
+          
+          const adjustments = transferData.products.map(product => {
+            console.log(`📦 Processing product: ${product.name} (${product.productId})`);
+            console.log(`   From branch: ${transferData.sourceBranchId}`);
+            console.log(`   To branch: ${transferData.destinationBranchId}`);
+            console.log(`   Quantity: ${product.quantity}`);
+            
+            return [
+              // Remove stock from source branch (negative delta)
+              {
+                productId: product.productId,
+                branchId: transferData.sourceBranchId,
+                delta: -product.quantity
+              },
+              // Add stock to destination branch (positive delta)
+              {
+                productId: product.productId,
+                branchId: transferData.destinationBranchId,
+                delta: product.quantity
+              }
+            ];
+          }).flat();
+          
+          console.log('🔧 Final adjustments to apply:', adjustments);
+          
+          try {
+            // Apply stock adjustments before updating transfer status
+            await applyAdjustments(adjustments);
+            console.log('✅ Stock adjustments applied successfully');
+          } catch (stockError) {
+            console.error('❌ Error applying stock adjustments:', stockError);
+            throw new Error(`Error actualizando stock: ${stockError.message}`);
+          }
+          
           break;
       }
 

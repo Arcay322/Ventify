@@ -9,4 +9,5 @@ export type Product = {
   imageUrl: string;
   hint: string;
   supplier?: string;
+  accountId: string; // ID de la cuenta a la que pertenece el producto
 };
