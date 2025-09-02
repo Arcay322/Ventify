@@ -265,7 +265,7 @@ export function CustomerSelector({ selectedCustomer, onCustomerSelect }: Custome
                 maxLength={8}
               />
               <div className="text-xs text-muted-foreground mt-1">
-                Opcional - Para boletas electrónicas
+                Opcional - Para notas de pedido
               </div>
             </div>
             <div>

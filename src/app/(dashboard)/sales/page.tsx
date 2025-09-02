@@ -869,9 +869,7 @@ export default function SalesPage() {
                                                 </div>
                                             ) : null;
                                         })()}
-                                        <div className="flex justify-between"><span className="text-muted-foreground">Subtotal (sin IGV)</span><span>S/{subtotalWithoutTax.toFixed(2)}</span></div>
-                                        <div className="flex justify-between"><span className="text-muted-foreground">IGV (18%)</span><span>S/{tax.toFixed(2)}</span></div>
-                                        <div className="flex justify-between"><span className="text-muted-foreground">Subtotal (con IGV)</span><span>S/{subtotal.toFixed(2)}</span></div>
+                                        <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>S/{subtotal.toFixed(2)}</span></div>
                                         {canApplyDiscount() && (
                                             <div className="space-y-2">
                                                 <div className="space-y-1">
@@ -1008,11 +1006,6 @@ export default function SalesPage() {
                                             <div className="flex justify-between"><span className="text-muted-foreground">Descuento aplicado</span><span className="text-destructive">-S/{discount.toFixed(2)}</span></div>
                                         )}
                                         <div className="flex justify-between font-bold text-lg"><span>Total</span><span>S/{total.toFixed(2)}</span></div>
-                                        {discount > 0 && (
-                                            <div className="text-xs text-muted-foreground">
-                                                (Incluye IGV: S/{finalTax.toFixed(2)})
-                                            </div>
-                                        )}
                                     </div>
                                     <Separator />
                                     <div>
@@ -1182,7 +1175,7 @@ export default function SalesPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead>Nro. Recibo</TableHead>
+                                        <TableHead>Nro. Pedido</TableHead>
                                         <TableHead>Fecha</TableHead>
                                         <TableHead>Cliente</TableHead>
                                         <TableHead>Sucursal</TableHead>

@@ -128,7 +128,7 @@ export default function SettingsPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle>Información del Negocio</CardTitle>
-                            <CardDescription>Esta información aparecerá en tus boletas, facturas y reportes.</CardDescription>
+                            <CardDescription>Esta información aparecerá en tus notas de pedido, reportes y documentos.</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
                              <FormField

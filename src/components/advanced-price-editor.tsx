@@ -439,7 +439,7 @@ export function AdvancedPriceEditor({
                 </div>
                 
                 <div className="text-sm text-muted-foreground">
-                  <p>• El producto aparecerá en el recibo con precio S/0.00</p>
+                  <p>• El producto aparecerá en la nota con precio S/0.00</p>
                   <p>• Se descontará del inventario normalmente</p>
                   <p>• Ideal para promociones tipo "Compra X, llévate Y gratis"</p>
                 </div>
