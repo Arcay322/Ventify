@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,10 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
     const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
     const [cancellationReason, setCancellationReason] = useState('');
     const [loading, setLoading] = useState(true);
+    
+    // Estados para paginación
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 8; // Menos items por página ya que las cards son más grandes
 
     useEffect(() => {
         if (!authState.initialized || !authState.userDoc?.accountId) return;
@@ -90,6 +94,19 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
 
         setFilteredReservations(filtered);
     }, [reservations, searchQuery, statusFilter]);
+
+    // Paginación
+    const paginatedReservations = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredReservations.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredReservations, currentPage, itemsPerPage]);
+
+    const totalPages = Math.ceil(filteredReservations.length / itemsPerPage);
+
+    // Reset página cuando cambien los filtros
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, statusFilter]);
 
     const getStatusBadge = (status: ReservationStatus) => {
         const config = {
@@ -211,6 +228,36 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
                             </Button>
                         </div>
                     </div>
+
+                    {/* Estadísticas de reservas */}
+                    {filteredReservations.length > 0 && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                            <div className="bg-blue-50 p-3 rounded-lg">
+                                <div className="text-xl font-bold text-blue-600">
+                                    {filteredReservations.length}
+                                </div>
+                                <div className="text-sm text-blue-600">
+                                    Reservas encontradas
+                                </div>
+                            </div>
+                            <div className="bg-green-50 p-3 rounded-lg">
+                                <div className="text-xl font-bold text-green-600">
+                                    S/{filteredReservations.reduce((sum, reservation) => sum + reservation.total, 0).toFixed(2)}
+                                </div>
+                                <div className="text-sm text-green-600">
+                                    Valor total reservado
+                                </div>
+                            </div>
+                            <div className="bg-orange-50 p-3 rounded-lg">
+                                <div className="text-xl font-bold text-orange-600">
+                                    {filteredReservations.filter(r => r.status === 'pending').length}
+                                </div>
+                                <div className="text-sm text-orange-600">
+                                    Pendientes de procesamiento
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </CardHeader>
 
                 <CardContent>
@@ -224,13 +271,15 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
                             }
                         </div>
                     ) : (
-                        <div className="grid gap-4">
-                            {filteredReservations.map((reservation) => {
-                                const daysUntilExpiry = reservation.expiryDate && reservation.status === 'pending' 
-                                    ? Math.ceil((reservation.expiryDate - Date.now()) / (1000 * 60 * 60 * 24))
-                                    : null;
-                                const isUrgent = daysUntilExpiry !== null && daysUntilExpiry <= 1;
-                                const isExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry <= 2 && daysUntilExpiry > 1;
+                        <div className="space-y-4">
+                            {/* Lista de reservas paginadas */}
+                            <div className="grid gap-4">
+                                {paginatedReservations.map((reservation) => {
+                                    const daysUntilExpiry = reservation.expiryDate && reservation.status === 'pending' 
+                                        ? Math.ceil((reservation.expiryDate - Date.now()) / (1000 * 60 * 60 * 24))
+                                        : null;
+                                    const isUrgent = daysUntilExpiry !== null && daysUntilExpiry <= 1;
+                                    const isExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry <= 2 && daysUntilExpiry > 1;
                                 
                                 return (
                                     <Card 
@@ -462,6 +511,61 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
                                     </Card>
                                 );
                             })}
+                            </div>
+
+                            {/* Información de paginación y controles */}
+                            {totalPages > 1 && (
+                                <div className="flex items-center justify-between pt-4 border-t">
+                                    <div className="text-sm text-muted-foreground">
+                                        Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, filteredReservations.length)} de {filteredReservations.length} reservas
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                        >
+                                            Anterior
+                                        </Button>
+                                        <div className="flex items-center gap-1">
+                                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                                const page = i + 1;
+                                                return (
+                                                    <Button
+                                                        key={page}
+                                                        variant={currentPage === page ? "default" : "outline"}
+                                                        size="sm"
+                                                        onClick={() => setCurrentPage(page)}
+                                                    >
+                                                        {page}
+                                                    </Button>
+                                                );
+                                            })}
+                                            {totalPages > 5 && (
+                                                <>
+                                                    {totalPages > 6 && <span className="text-muted-foreground px-2">...</span>}
+                                                    <Button
+                                                        variant={currentPage === totalPages ? "default" : "outline"}
+                                                        size="sm"
+                                                        onClick={() => setCurrentPage(totalPages)}
+                                                    >
+                                                        {totalPages}
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={currentPage === totalPages}
+                                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                        >
+                                            Siguiente
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </CardContent>

@@ -7,7 +7,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription }
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Separator } from '@/components/ui/separator';
-import { Trash2, X, Search, CreditCard, Wallet, Coins, CornerDownLeft, History, User, Calendar, Clock } from "lucide-react";
+import { Trash2, X, Search, CreditCard, Wallet, Coins, CornerDownLeft, History, User, Calendar, Clock, ChevronDown, Filter, Receipt, Copy, Eye, ArrowUpDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from '@/types/product';
 import type { Sale } from '@/types/sale';
@@ -20,6 +20,7 @@ import { ReservationsManager } from '@/components/reservations-manager';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import Link from 'next/link';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { CustomerSelector } from '@/components/customer-selector';
@@ -41,6 +42,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CalendarIcon } from "lucide-react";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { cn } from "@/lib/utils";
 
 type CartItem = Product & { 
     quantity: number;
@@ -86,6 +92,21 @@ export default function SalesPage() {
     
     // Control de tabs
     const activeTab = searchParams.get('tab') || 'pos';
+    
+    // Estados para transacciones mejoradas
+    const [selectedTransaction, setSelectedTransaction] = useState<Sale | null>(null);
+    const [transactionFilters, setTransactionFilters] = useState({
+        branchId: 'all',
+        paymentMethod: 'all',
+        dateFrom: null as Date | null,
+        dateTo: null as Date | null,
+        status: 'all' // completed, returned, partial
+    });
+    const [sortBy, setSortBy] = useState<'date' | 'total' | 'customer'>('date');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+    const [isTransactionDetailOpen, setIsTransactionDetailOpen] = useState(false);
     const [completedReservation, setCompletedReservation] = useState<Reservation | null>(null);
 
     // Helper function to get available stock (physical - reserved)
@@ -470,33 +491,75 @@ export default function SalesPage() {
     }, [products, searchQuery]);
 
     const filteredTransactions = useMemo(() => {
-        if(!transactionSearch) return salesHistory;
-        const searchTerm = transactionSearch.toLowerCase();
-        return salesHistory.filter(s => {
-            // Buscar por ID de venta
-            if (s.id.toLowerCase().includes(searchTerm)) return true;
+        let filtered = [...salesHistory];
+        
+        // Filtro de búsqueda de texto
+        if (transactionSearch) {
+            const searchTerm = transactionSearch.toLowerCase();
+            filtered = filtered.filter(s => {
+                return (
+                    s.id.toLowerCase().includes(searchTerm) ||
+                    (s.saleNumber && s.saleNumber.toString().includes(searchTerm)) ||
+                    (s.customerName && s.customerName.toLowerCase().includes(searchTerm)) ||
+                    ((s as any).customerEmail && (s as any).customerEmail.toLowerCase().includes(searchTerm)) ||
+                    ((s as any).customerPhone && (s as any).customerPhone.toLowerCase().includes(searchTerm)) ||
+                    (s.paymentMethod && s.paymentMethod.toLowerCase().includes(searchTerm)) ||
+                    s.total.toString().includes(searchTerm)
+                );
+            });
+        }
+        
+        // Filtro por sucursal
+        if (transactionFilters.branchId !== 'all') {
+            filtered = filtered.filter(s => s.branchId === transactionFilters.branchId);
+        }
+        
+        // Filtro por método de pago
+        if (transactionFilters.paymentMethod !== 'all') {
+            filtered = filtered.filter(s => s.paymentMethod === transactionFilters.paymentMethod);
+        }
+        
+        // Filtro por rango de fechas
+        if (transactionFilters.dateFrom) {
+            filtered = filtered.filter(s => new Date(s.date) >= transactionFilters.dateFrom!);
+        }
+        if (transactionFilters.dateTo) {
+            const endDate = new Date(transactionFilters.dateTo);
+            endDate.setHours(23, 59, 59, 999);
+            filtered = filtered.filter(s => new Date(s.date) <= endDate);
+        }
+        
+        // Ordenamiento
+        filtered.sort((a, b) => {
+            let compareValue = 0;
             
-            // Buscar por número de venta
-            if (s.saleNumber && s.saleNumber.toString().includes(searchTerm)) return true;
+            switch (sortBy) {
+                case 'date':
+                    compareValue = new Date(a.date).getTime() - new Date(b.date).getTime();
+                    break;
+                case 'total':
+                    compareValue = a.total - b.total;
+                    break;
+                case 'customer':
+                    const nameA = a.customerName || 'Sin cliente';
+                    const nameB = b.customerName || 'Sin cliente';
+                    compareValue = nameA.localeCompare(nameB);
+                    break;
+            }
             
-            // Buscar por nombre de cliente
-            if (s.customerName && s.customerName.toLowerCase().includes(searchTerm)) return true;
-            
-            // Buscar por email de cliente
-            if ((s as any).customerEmail && (s as any).customerEmail.toLowerCase().includes(searchTerm)) return true;
-            
-            // Buscar por teléfono de cliente
-            if ((s as any).customerPhone && (s as any).customerPhone.toLowerCase().includes(searchTerm)) return true;
-            
-            // Buscar por método de pago
-            if (s.paymentMethod && s.paymentMethod.toLowerCase().includes(searchTerm)) return true;
-            
-            // Buscar por total (convertir a string para búsqueda parcial)
-            if (s.total && s.total.toString().includes(searchTerm)) return true;
-            
-            return false;
+            return sortOrder === 'asc' ? compareValue : -compareValue;
         });
-    }, [salesHistory, transactionSearch])
+        
+        return filtered;
+    }, [salesHistory, transactionSearch, transactionFilters, sortBy, sortOrder]);
+
+    // Paginación
+    const paginatedTransactions = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredTransactions.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredTransactions, currentPage, itemsPerPage]);
+
+    const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
 
     const addToCart = useCallback((product: Product) => {
         const branchId = selectedBranch || Object.keys(product.stock || {})[0];
@@ -692,7 +755,41 @@ export default function SalesPage() {
     const handleReturnClick = (sale: Sale) => {
         setSaleToReturn(sale);
         setIsReturnModalOpen(true);
-    }
+    };
+
+    const handleViewDetails = (sale: Sale) => {
+        setSelectedTransaction(sale);
+        setIsTransactionDetailOpen(true);
+    };
+
+    const handleReprintReceipt = (sale: Sale) => {
+        setCompletedSale(sale);
+        setIsReceiptModalOpen(true);
+    };
+
+    const handleCopyToNewSale = (sale: Sale) => {
+        // Limpiar carrito actual
+        setCart([]);
+        
+        // Agregar productos de la venta al carrito
+        const newCartItems: CartItem[] = sale.items.map(item => ({
+            ...item,
+            quantity: item.quantity
+        }));
+        
+        setCart(newCartItems);
+        
+        // Cambiar al tab de punto de venta
+        const newParams = new URLSearchParams(searchParams.toString());
+        newParams.delete('tab');
+        const newUrl = newParams.toString() ? `?${newParams.toString()}` : '';
+        window.history.pushState({}, '', `/sales${newUrl}`);
+        
+        toast({
+            title: "Productos copiados",
+            description: `Se copiaron ${sale.items.length} productos al carrito`,
+        });
+    };
 
     // Función para crear una reserva
     const handleCreateReservation = () => {
@@ -1466,85 +1563,343 @@ export default function SalesPage() {
                     />
                 </TabsContent>
                 <TabsContent value="transactions">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Historial de Transacciones</CardTitle>
-                            <CardDescription>Busca ventas anteriores para ver detalles o procesar una devolución.</CardDescription>
-                             <div className="flex items-center gap-4 mt-2">
-                                <div className="relative max-w-sm">
-                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                    <Input type="search" placeholder="Buscar por número de venta, cliente, total..." className="w-full pl-8 pr-8" value={transactionSearch} onChange={(e) => setTransactionSearch(e.target.value)} />
-                                    {transactionSearch && (
+                    <div className="space-y-6">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <History className="h-5 w-5" />
+                                    Historial de Transacciones
+                                </CardTitle>
+                                <CardDescription>
+                                    Gestiona todas las ventas realizadas: busca, filtra, ve detalles y procesa devoluciones.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                {/* Barra de búsqueda y filtros */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div className="relative">
+                                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                        <Input
+                                            type="search"
+                                            placeholder="Buscar transacciones..."
+                                            className="pl-8"
+                                            value={transactionSearch}
+                                            onChange={(e) => setTransactionSearch(e.target.value)}
+                                        />
+                                    </div>
+                                    
+                                    <Select
+                                        value={transactionFilters.branchId}
+                                        onValueChange={(value) => setTransactionFilters(prev => ({...prev, branchId: value}))}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Todas las sucursales" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">Todas las sucursales</SelectItem>
+                                            {branches.map(branch => (
+                                                <SelectItem key={branch.id} value={branch.id}>
+                                                    {branch.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    
+                                    <Select
+                                        value={transactionFilters.paymentMethod}
+                                        onValueChange={(value) => setTransactionFilters(prev => ({...prev, paymentMethod: value}))}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Todos los métodos" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">Todos los métodos</SelectItem>
+                                            <SelectItem value="Efectivo">Efectivo</SelectItem>
+                                            <SelectItem value="Tarjeta">Tarjeta</SelectItem>
+                                            <SelectItem value="Digital">Digital</SelectItem>
+                                            <SelectItem value="Mixto">Mixto</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    
+                                    <div className="flex gap-2">
                                         <Button
-                                            variant="ghost"
+                                            variant="outline"
                                             size="sm"
-                                            className="absolute right-1 top-1 h-6 w-6 p-0"
-                                            onClick={() => setTransactionSearch('')}
+                                            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
                                         >
-                                            <X className="h-3 w-3" />
+                                            <ArrowUpDown className="h-4 w-4 mr-1" />
+                                            {sortOrder === 'asc' ? 'Más antiguas' : 'Más recientes'}
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Filtros de fecha */}
+                                <div className="flex flex-wrap gap-4">
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "justify-start text-left font-normal",
+                                                    !transactionFilters.dateFrom && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {transactionFilters.dateFrom ? format(transactionFilters.dateFrom, "PPP", { locale: es }) : "Desde fecha"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0">
+                                            <CalendarComponent
+                                                mode="single"
+                                                selected={transactionFilters.dateFrom || undefined}
+                                                onSelect={(date) => setTransactionFilters(prev => ({...prev, dateFrom: date || null}))}
+                                                initialFocus
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className={cn(
+                                                    "justify-start text-left font-normal",
+                                                    !transactionFilters.dateTo && "text-muted-foreground"
+                                                )}
+                                            >
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {transactionFilters.dateTo ? format(transactionFilters.dateTo, "PPP", { locale: es }) : "Hasta fecha"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0">
+                                            <CalendarComponent
+                                                mode="single"
+                                                selected={transactionFilters.dateTo || undefined}
+                                                onSelect={(date) => setTransactionFilters(prev => ({...prev, dateTo: date || null}))}
+                                                initialFocus
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+
+                                    {(transactionFilters.dateFrom || transactionFilters.dateTo || transactionFilters.branchId !== 'all' || transactionFilters.paymentMethod !== 'all') && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setTransactionFilters({
+                                                    branchId: 'all',
+                                                    paymentMethod: 'all',
+                                                    dateFrom: null,
+                                                    dateTo: null,
+                                                    status: 'all'
+                                                });
+                                                setTransactionSearch('');
+                                            }}
+                                        >
+                                            <X className="h-4 w-4 mr-1" />
+                                            Limpiar filtros
                                         </Button>
                                     )}
                                 </div>
-                                {transactionSearch && (
-                                    <div className="text-sm text-muted-foreground">
-                                        {filteredTransactions.length} resultado{filteredTransactions.length !== 1 ? 's' : ''} encontrado{filteredTransactions.length !== 1 ? 's' : ''}
+
+                                {/* Estadísticas */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="bg-blue-50 p-4 rounded-lg">
+                                        <div className="text-2xl font-bold text-blue-600">
+                                            {filteredTransactions.length}
+                                        </div>
+                                        <div className="text-sm text-blue-600">
+                                            Transacciones encontradas
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Nro. Pedido</TableHead>
-                                        <TableHead>Fecha</TableHead>
-                                        <TableHead>Cliente</TableHead>
-                                        <TableHead>Sucursal</TableHead>
-                                        <TableHead>Método de Pago</TableHead>
-                                        <TableHead className="text-right">Total</TableHead>
-                                        <TableHead className="text-right">Acciones</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredTransactions.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                                                {transactionSearch ? 
-                                                    `No se encontraron transacciones que coincidan con "${transactionSearch}"` : 
-                                                    'No hay transacciones registradas'
-                                                }
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        filteredTransactions.map((sale) => (
-                                            <TableRow key={sale.id}>
-                                                <TableCell className="font-mono">{sale.saleNumber || sale.id.slice(-6)}</TableCell>
-                                                <TableCell>{format(new Date(sale.date), "PPP p", { locale: es })}</TableCell>
-                                                <TableCell>
-                                                    {sale.customerName ? (
-                                                        <div>
-                                                            <div className="font-medium">{sale.customerName}</div>
-                                                            <div className="text-xs text-muted-foreground">{sale.customerEmail || sale.customerPhone}</div>
+                                    <div className="bg-green-50 p-4 rounded-lg">
+                                        <div className="text-2xl font-bold text-green-600">
+                                            S/{filteredTransactions.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
+                                        </div>
+                                        <div className="text-sm text-green-600">
+                                            Total en ventas
+                                        </div>
+                                    </div>
+                                    <div className="bg-orange-50 p-4 rounded-lg">
+                                        <div className="text-2xl font-bold text-orange-600">
+                                            {filteredTransactions.reduce((sum, sale) => sum + sale.items.length, 0)}
+                                        </div>
+                                        <div className="text-sm text-orange-600">
+                                            Productos vendidos
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Lista de transacciones mejorada */}
+                        <div className="space-y-4">
+                            {paginatedTransactions.length === 0 ? (
+                                <Card>
+                                    <CardContent className="text-center py-8 text-muted-foreground">
+                                        {transactionSearch || transactionFilters.branchId !== 'all' || transactionFilters.paymentMethod !== 'all' || transactionFilters.dateFrom || transactionFilters.dateTo ? 
+                                            'No se encontraron transacciones con los filtros aplicados' : 
+                                            'No hay transacciones registradas'
+                                        }
+                                    </CardContent>
+                                </Card>
+                            ) : (
+                                paginatedTransactions.map((sale) => (
+                                    <Card key={sale.id} className="transition-all hover:shadow-lg">
+                                        <CardContent className="p-6">
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="space-y-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-bold text-lg">
+                                                            Venta #{sale.saleNumber || sale.id.slice(-6)}
+                                                        </h3>
+                                                        <Badge variant={
+                                                            sale.paymentMethod === 'Efectivo' ? 'default' :
+                                                            sale.paymentMethod === 'Tarjeta' ? 'secondary' :
+                                                            sale.paymentMethod === 'Digital' ? 'outline' : 'destructive'
+                                                        }>
+                                                            {sale.paymentMethod}
+                                                        </Badge>
+                                                    </div>
+                                                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                                        <span className="flex items-center gap-1">
+                                                            <Calendar className="h-4 w-4" />
+                                                            {format(new Date(sale.date), "PPP p", { locale: es })}
+                                                        </span>
+                                                        <span className="flex items-center gap-1">
+                                                            <User className="h-4 w-4" />
+                                                            {sale.customerName || 'Cliente sin registrar'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        Sucursal: {branches.find(b => b.id === sale.branchId)?.name || 'N/A'}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-2xl font-bold text-green-600">
+                                                        S/{sale.total.toFixed(2)}
+                                                    </div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        {sale.items.length} producto{sale.items.length !== 1 ? 's' : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Vista previa de productos */}
+                                            <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-sm font-medium text-gray-700">
+                                                        Productos vendidos
+                                                    </span>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {sale.items.reduce((sum, item) => sum + item.quantity, 0)} unidades
+                                                    </span>
+                                                </div>
+                                                <div className="space-y-1 max-h-20 overflow-y-auto">
+                                                    {sale.items.slice(0, 3).map((item, index) => (
+                                                        <div key={index} className="flex items-center justify-between text-sm">
+                                                            <span className="truncate flex-1">
+                                                                {item.quantity}x {item.name}
+                                                            </span>
+                                                            <span className="text-muted-foreground ml-2">
+                                                                S/{(item.price * item.quantity).toFixed(2)}
+                                                            </span>
                                                         </div>
-                                                    ) : (
-                                                        <span className="text-muted-foreground">Sin cliente</span>
+                                                    ))}
+                                                    {sale.items.length > 3 && (
+                                                        <div className="text-xs text-center text-muted-foreground py-1">
+                                                            +{sale.items.length - 3} productos más...
+                                                        </div>
                                                     )}
-                                                </TableCell>
-                                                <TableCell>{branches.find(b => b.id === sale.branchId)?.name || sale.branchId}</TableCell>
-                                                <TableCell>{sale.paymentMethod}</TableCell>
-                                                <TableCell className="text-right font-medium">S/{sale.total.toFixed(2)}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <Button variant="outline" size="sm" onClick={() => handleReturnClick(sale)}>
-                                                        <CornerDownLeft className="mr-2 h-4 w-4" /> Devolución
-                                                    </Button>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
+                                                </div>
+                                            </div>
+
+                                            {/* Acciones */}
+                                            <div className="flex flex-wrap gap-2">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleViewDetails(sale)}
+                                                >
+                                                    <Eye className="h-4 w-4 mr-1" />
+                                                    Ver detalles
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleReprintReceipt(sale)}
+                                                >
+                                                    <Receipt className="h-4 w-4 mr-1" />
+                                                    Reimprimir
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleCopyToNewSale(sale)}
+                                                >
+                                                    <Copy className="h-4 w-4 mr-1" />
+                                                    Copiar al carrito
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    onClick={() => handleReturnClick(sale)}
+                                                >
+                                                    <CornerDownLeft className="h-4 w-4 mr-1" />
+                                                    Devolución
+                                                </Button>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Paginación */}
+                        {totalPages > 1 && (
+                            <Card>
+                                <CardContent className="p-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-sm text-muted-foreground">
+                                            Mostrando {((currentPage - 1) * itemsPerPage) + 1} a {Math.min(currentPage * itemsPerPage, filteredTransactions.length)} de {filteredTransactions.length} transacciones
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={currentPage === 1}
+                                                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                            >
+                                                Anterior
+                                            </Button>
+                                            <div className="flex items-center gap-1">
+                                                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                                    const page = i + 1;
+                                                    return (
+                                                        <Button
+                                                            key={page}
+                                                            variant={currentPage === page ? "default" : "outline"}
+                                                            size="sm"
+                                                            onClick={() => setCurrentPage(page)}
+                                                        >
+                                                            {page}
+                                                        </Button>
+                                                    );
+                                                })}
+                                            </div>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                disabled={currentPage === totalPages}
+                                                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                            >
+                                                Siguiente
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
                 </TabsContent>
             </Tabs>
       
@@ -1570,6 +1925,132 @@ export default function SalesPage() {
                 onOpenChange={setIsReservationReceiptModalOpen}
                 reservationDetails={completedReservation}
             />
+
+            {/* Modal de detalles de transacción */}
+            {selectedTransaction && (
+                <Dialog open={isTransactionDetailOpen} onOpenChange={setIsTransactionDetailOpen}>
+                    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <Receipt className="h-5 w-5" />
+                                Detalles de Venta #{selectedTransaction.saleNumber || selectedTransaction.id.slice(-6)}
+                            </DialogTitle>
+                            <DialogDescription>
+                                Información completa de la transacción
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-6">
+                            {/* Información general */}
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                    <h3 className="font-semibold mb-2">Información de venta</h3>
+                                    <div className="space-y-2 text-sm">
+                                        <div>
+                                            <span className="text-muted-foreground">Fecha:</span>{' '}
+                                            {format(new Date(selectedTransaction.date), "PPP p", { locale: es })}
+                                        </div>
+                                        <div>
+                                            <span className="text-muted-foreground">Método de pago:</span>{' '}
+                                            <Badge variant="outline">{selectedTransaction.paymentMethod}</Badge>
+                                        </div>
+                                        <div>
+                                            <span className="text-muted-foreground">Sucursal:</span>{' '}
+                                            {branches.find(b => b.id === selectedTransaction.branchId)?.name || 'N/A'}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="font-semibold mb-2">Cliente</h3>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="font-medium">
+                                            {selectedTransaction.customerName || 'Cliente sin registrar'}
+                                        </div>
+                                        {(selectedTransaction as any).customerPhone && (
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-muted-foreground">Teléfono:</span>
+                                                {(selectedTransaction as any).customerPhone}
+                                            </div>
+                                        )}
+                                        {(selectedTransaction as any).customerEmail && (
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-muted-foreground">Email:</span>
+                                                {(selectedTransaction as any).customerEmail}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Productos */}
+                            <div>
+                                <h3 className="font-semibold mb-3">Productos vendidos</h3>
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                    {selectedTransaction.items.map((item, index) => (
+                                        <div key={index} className="flex items-center gap-3 p-3 border rounded-lg">
+                                            <div className="flex-1">
+                                                <div className="font-medium">{item.name}</div>
+                                                <div className="text-sm text-muted-foreground">
+                                                    SKU: {item.sku || 'N/A'}
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="font-semibold">
+                                                    {item.quantity}x S/{item.price.toFixed(2)}
+                                                </div>
+                                                <div className="text-sm font-bold">
+                                                    S/{(item.quantity * item.price).toFixed(2)}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Totales */}
+                            <div className="border-t pt-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
+                                        <span>Subtotal:</span>
+                                        <span>S/{selectedTransaction.subtotal.toFixed(2)}</span>
+                                    </div>
+                                    {selectedTransaction.discount > 0 && (
+                                        <div className="flex justify-between text-red-600">
+                                            <span>Descuento:</span>
+                                            <span>-S/{selectedTransaction.discount.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between">
+                                        <span>IGV (18%):</span>
+                                        <span>S/{selectedTransaction.tax.toFixed(2)}</span>
+                                    </div>
+                                    <Separator />
+                                    <div className="flex justify-between font-bold text-lg">
+                                        <span>Total:</span>
+                                        <span>S/{selectedTransaction.total.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsTransactionDetailOpen(false)}>
+                                Cerrar
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    handleReprintReceipt(selectedTransaction);
+                                    setIsTransactionDetailOpen(false);
+                                }}
+                            >
+                                <Receipt className="h-4 w-4 mr-2" />
+                                Reimprimir recibo
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
         </>
     )
 }
