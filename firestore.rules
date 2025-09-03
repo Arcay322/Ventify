@@ -585,5 +585,62 @@ service cloud.firestore {
       // Delete reservation deposits: only admins can delete
       allow delete: if isAdmin();
     }
+
+    match /cash_closures/{closureId} {
+      // Create cash closures (Z reports): cashiers and managers can create closures for their branch
+      allow create: if isAuthenticated() && (
+        isAdmin()
+        || (
+          request.resource.data.branchId != null 
+          && request.resource.data.branchId != 'all'
+          && (
+            isManagerForBranch(request.resource.data.branchId)
+            || isCashierForBranch(request.resource.data.branchId)
+          )
+        )
+        // Admin/Owner can create reports for all branches
+        || (
+          request.resource.data.branchId == 'all'
+          && isAdmin()
+        )
+      ) && (
+        // Must have required fields
+        request.resource.data.createdAt != null
+        && request.resource.data.from != null
+        && request.resource.data.to != null
+        && request.resource.data.total != null
+        && request.resource.data.transactions != null
+      );
+
+      // Read cash closures: admin or users in same account who are managers/cashiers for the branch
+      allow read, list: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource.exists() && (
+            // For specific branch closures
+            (
+              resource.data.branchId != 'all'
+              && (
+                isManagerForBranch(resource.data.branchId)
+                || isCashierForBranch(resource.data.branchId)
+              )
+            )
+            // For all branches closures, only admin can read
+            || (resource.data.branchId == 'all' && isAdmin())
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+
+      // Update/Delete: only admins can modify closures
+      allow update, delete: if isAdmin();
+    }
   }
 }

@@ -21,17 +21,6 @@ const productFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Product => {
         accountId: data.accountId, // Incluir accountId
     };
     
-    // Debug log for Silla product
-    if (data.name === 'Silla') {
-        console.log(`📦 Product 'Silla' loaded from Firestore:`, {
-            id: product.id,
-            stock: product.stock,
-            reservedStock: product.reservedStock,
-            accountId: product.accountId,
-            fromFunction: 'productFromDoc'
-        });
-    }
-    
     return product;
 }
 
@@ -45,6 +34,41 @@ export const getAvailableStock = (product: Product, branchId: string): number =>
 // Verificar si un producto tiene stock suficiente para venta
 export const hasAvailableStock = (product: Product, branchId: string, quantity: number): boolean => {
     return getAvailableStock(product, branchId) >= quantity;
+};
+
+// Obtener productos con stock crítico (bajo)
+export const getLowStockProducts = async (accountId: string, threshold: number = 5): Promise<Array<Product & { branchId: string; availableStock: number }>> => {
+    try {
+        const productsCollection = collection(db, PRODUCTS_COLLECTION);
+        const q = query(productsCollection, where('accountId', '==', accountId));
+        const snapshot = await getDocs(q);
+        
+        const lowStockProducts: Array<Product & { branchId: string; availableStock: number }> = [];
+        
+        snapshot.docs.forEach(doc => {
+            const product = productFromDoc(doc);
+            
+            // Revisar stock en cada sucursal
+            Object.entries(product.stock || {}).forEach(([branchId, stock]) => {
+                const availableStock = getAvailableStock(product, branchId);
+                
+                if (availableStock <= threshold && availableStock >= 0) {
+                    lowStockProducts.push({
+                        ...product,
+                        branchId,
+                        availableStock
+                    });
+                }
+            });
+        });
+        
+        // Ordenar por stock más bajo primero
+        return lowStockProducts.sort((a, b) => a.availableStock - b.availableStock);
+        
+    } catch (error) {
+        console.error('Error getting low stock products:', error);
+        return [];
+    }
 };
 
 export const getProducts = (callback: (products: Product[]) => void, accountId?: string) => {

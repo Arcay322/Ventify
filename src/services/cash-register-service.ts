@@ -367,6 +367,7 @@ export const getCashRegisterReports = (callback: (reports: any[]) => void, accou
 export const getActiveSession = async (branchId: string, accountId?: string): Promise<CashRegisterSession | null> => {
     try {
         const resolvedAccountId = await resolveAccountIdFromAuth(accountId);
+        
         if (!resolvedAccountId) {
             console.error('[cash-register] getActiveSession: missing accountId');
             return null;
@@ -377,7 +378,7 @@ export const getActiveSession = async (branchId: string, accountId?: string): Pr
             where('branchId', '==', branchId),
             where('accountId', '==', resolvedAccountId),
             where('status', '==', 'open'),
-            orderBy('openedAt', 'desc'),
+            orderBy('openTime', 'desc'),
             limit(1)
         );
         
@@ -388,12 +389,43 @@ export const getActiveSession = async (branchId: string, accountId?: string): Pr
         }
         
         const doc = querySnapshot.docs[0];
+        const sessionData = doc.data();
+        
         return {
             id: doc.id,
-            ...doc.data()
+            ...sessionData
         } as CashRegisterSession;
     } catch (error) {
         console.error('Error getting active session:', error);
         throw error;
+    }
+};
+
+// Get all active sessions for an account (for dashboard summary)
+export const getAllActiveSessions = async (accountId?: string): Promise<CashRegisterSession[]> => {
+    try {
+        const resolvedAccountId = await resolveAccountIdFromAuth(accountId);
+        
+        if (!resolvedAccountId) {
+            console.error('[cash-register] getAllActiveSessions: missing accountId');
+            return [];
+        }
+
+        const q = query(
+            collection(db, 'cash_register_sessions'),
+            where('accountId', '==', resolvedAccountId),
+            where('status', '==', 'open'),
+            orderBy('openTime', 'desc')
+        );
+        
+        const querySnapshot = await getDocs(q);
+        
+        return querySnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        })) as CashRegisterSession[];
+    } catch (error) {
+        console.error('Error getting all active sessions:', error);
+        return [];
     }
 };
