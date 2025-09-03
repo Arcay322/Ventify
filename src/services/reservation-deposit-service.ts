@@ -191,4 +191,28 @@ export class ReservationDepositService {
             return [];
         }
     }
+
+    /**
+     * Obtener depósitos activos de todas las sucursales de una cuenta
+     */
+    static async getAllActiveDeposits(accountId: string): Promise<ReservationDeposit[]> {
+        try {
+            const depositQuery = query(
+                collection(db, RESERVATION_DEPOSITS_COLLECTION),
+                where('accountId', '==', accountId),
+                where('status', '==', 'active'),
+                orderBy('date', 'desc')
+            );
+            
+            const querySnapshot = await getDocs(depositQuery);
+
+            return querySnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as ReservationDeposit[];
+        } catch (error) {
+            console.error('Error getting all active deposits:', error);
+            return [];
+        }
+    }
 }

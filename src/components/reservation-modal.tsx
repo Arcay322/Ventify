@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ReservationService } from '@/services/reservation-service';
 import { ReservationDepositService } from '@/services/reservation-deposit-service';
@@ -49,6 +50,7 @@ export function ReservationModal({
     const [notes, setNotes] = useState('');
     const [reservationDays, setReservationDays] = useState(7);
     const [depositAmount, setDepositAmount] = useState<number>(0);
+    const [paymentMethod, setPaymentMethod] = useState<string>('Efectivo');
 
     // Reset form when modal opens
     useEffect(() => {
@@ -60,6 +62,7 @@ export function ReservationModal({
             setNotes('');
             setReservationDays(7);
             setDepositAmount(0);
+            setPaymentMethod('Efectivo');
         }
     }, [isOpen]);
 
@@ -107,6 +110,16 @@ export function ReservationModal({
             toast({
                 title: "Depósito inválido",
                 description: `El depósito debe estar entre S/0.00 y S/${saleData.total.toFixed(2)}`,
+                variant: "destructive"
+            });
+            return;
+        }
+
+        // Si hay depósito, validar que se haya seleccionado método de pago
+        if (depositAmount > 0 && !paymentMethod) {
+            toast({
+                title: "Método de pago requerido",
+                description: "Debes seleccionar un método de pago para el depósito",
                 variant: "destructive"
             });
             return;
@@ -190,9 +203,9 @@ export function ReservationModal({
                     depositAmount,
                     paymentMethod,
                     customerName,
-                    saleData.branchId,
-                    saleData.accountId,
-                    saleData.createdBy
+                    saleData.selectedBranch,
+                    authState.userDoc?.accountId || '',
+                    authState.user?.uid || ''
                 );
                 
                 toast({
@@ -372,6 +385,22 @@ export function ReservationModal({
                                 </p>
                             </div>
                         </div>
+
+                        {depositAmount > 0 && (
+                            <div>
+                                <Label htmlFor="paymentMethod">Método de pago del depósito</Label>
+                                <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Seleccionar método de pago" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Efectivo">Efectivo</SelectItem>
+                                        <SelectItem value="Tarjeta">Tarjeta</SelectItem>
+                                        <SelectItem value="Digital">Pago Digital</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
 
                         <div>
                             <Label htmlFor="notes" className="flex items-center gap-1">

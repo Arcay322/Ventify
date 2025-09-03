@@ -363,12 +363,19 @@ export const getCashRegisterReports = (callback: (reports: any[]) => void, accou
     });
 };
 
-// Get active session for current branch
-export const getActiveSession = async (branchId: string): Promise<CashRegisterSession | null> => {
+// Get active session for current branch and account
+export const getActiveSession = async (branchId: string, accountId?: string): Promise<CashRegisterSession | null> => {
     try {
+        const resolvedAccountId = await resolveAccountIdFromAuth(accountId);
+        if (!resolvedAccountId) {
+            console.error('[cash-register] getActiveSession: missing accountId');
+            return null;
+        }
+
         const q = query(
             collection(db, 'cash_register_sessions'),
             where('branchId', '==', branchId),
+            where('accountId', '==', resolvedAccountId),
             where('status', '==', 'open'),
             orderBy('openedAt', 'desc'),
             limit(1)

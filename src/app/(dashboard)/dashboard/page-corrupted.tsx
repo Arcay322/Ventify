@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, Legend } from "recharts";
@@ -21,12 +21,12 @@ import { collection, addDoc } from 'firebase/firestore';
 import { subDays, startOfDay, endOfDay, formatISO } from 'date-fns';
 
 export default function DashboardPage() {
-  // TODOS los hooks deben ir ANTES de cualquier return condicional
+  // Todos los hooks deben ir ANTES de cualquier return condicional
   const { canAccessDashboard, isOwner, isAdmin, isManager, userRole, userBranchId } = usePermissions();
   const authState = useAuth();
   const { toast } = useToast();
   
-  // Estados
+  // Estados - siempre se declaran primero
   const [selectedBranch, setSelectedBranch] = useState('all');
   const [branches, setBranches] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
@@ -43,18 +43,33 @@ export default function DashboardPage() {
   const [paymentDist, setPaymentDist] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
 
-  // useEffect separado para establecer sucursal automáticamente para managers
-  useEffect(() => {
-    // Para managers, establecer automáticamente su sucursal solo una vez
-    if (isManager() && userBranchId && selectedBranch === 'all') {
-      setSelectedBranch(userBranchId);
-    }
-  }, [isManager, userBranchId]); // No incluir selectedBranch aquí para evitar loops
+  // Verificar si el usuario tiene acceso al dashboard - DESPUÉS de los hooks
+  if (!canAccessDashboard()) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <AlertTriangle className="h-16 w-16 text-orange-500" />
+        <h2 className="text-2xl font-bold text-gray-900">Acceso Denegado</h2>
+        <p className="text-gray-600 text-center max-w-md">
+          No tienes permisos para acceder al dashboard. Contacta a tu administrador si crees que esto es un error.
+        </p>
+        <p className="text-sm text-gray-500">
+          Rol actual: <span className="font-medium">{userRole || 'No definido'}</span>
+        </p>
+        <Button asChild>
+          <Link href="/sales">Ir a Ventas</Link>
+        </Button>
+      </div>
+    );
+  }
 
-  // useEffect para cargar datos
   useEffect(() => {
     const accountId = authState.userDoc?.accountId as string | undefined;
     if (!accountId) return;
+
+    // Para managers, establecer automáticamente su sucursal
+    if (isManager() && userBranchId && selectedBranch === 'all') {
+      setSelectedBranch(userBranchId);
+    }
 
     // Cargar sucursales
     const unsubBranches = getBranches(setBranches, accountId);
@@ -67,11 +82,8 @@ export default function DashboardPage() {
       if (selectedBranch && selectedBranch !== 'all') {
         const deposits = await ReservationDepositService.getActiveDeposits(selectedBranch, accountId);
         setReservationDeposits(deposits);
-      } else if (selectedBranch === 'all') {
-        // Obtener depósitos de todas las sucursales
-        const deposits = await ReservationDepositService.getAllActiveDeposits(accountId);
-        setReservationDeposits(deposits);
       } else {
+        // Para "all", necesitaríamos cargar de todas las sucursales
         setReservationDeposits([]);
       }
     };
@@ -93,26 +105,18 @@ export default function DashboardPage() {
     loadReservationDeposits();
     loadCashSession();
 
-    return () => {
-      unsubBranches();
-      unsubSales();
+    return () => { 
+      try { unsubBranches(); } catch(e){}; 
+      try { unsubSales(); } catch(e){}; 
     };
-  }, [authState.userDoc?.accountId, selectedBranch]); // Removido isManager y userBranchId para evitar loops
+  }, [authState.userDoc?.accountId, selectedBranch]);
 
-  // useEffect para calcular KPIs y datos de gráficos
   useEffect(() => {
-    if (!sales.length && !reservationDeposits.length) return;
-
-    // Filtrar por sucursal
-    const filtered = selectedBranch === 'all' 
-      ? sales 
-      : sales.filter(s => s.branchId === selectedBranch);
-
-    // Solo ventas de hoy
-    const today = new Date();
-    const startToday = startOfDay(today).getTime();
-    const endToday = endOfDay(today).getTime();
-    const todaySales = filtered.filter(s => (s.date || 0) >= startToday && (s.date || 0) <= endToday);
+    // Recompute KPIs when sales, deposits, or selectedBranch change
+    const now = Date.now();
+    const todayStart = startOfDay(new Date()).getTime();
+    const filtered = sales.filter(s => selectedBranch === 'all' ? true : s.branchId === selectedBranch);
+    const todaySales = filtered.filter(s => (s.date || 0) >= todayStart);
     
     // KPIs de ventas
     const totalSales = todaySales.reduce((a, b) => a + (b.total || 0), 0);
@@ -166,7 +170,7 @@ export default function DashboardPage() {
       color: colors[index % colors.length] 
     })));
 
-    // Top products
+    // Top products - today only (aggregate units sold from sales.items)
     const prodCounts: Record<string, { sku: string; name: string; units: number }> = {};
     todaySales.forEach(s => {
       (s.items || []).forEach((it: any) => {
@@ -179,17 +183,6 @@ export default function DashboardPage() {
     setTopProducts(top);
   }, [sales, selectedBranch, reservationDeposits]);
 
-  // Memoizar branches filtradas para evitar re-renders
-  const filteredBranches = useMemo(() => {
-    return branches.filter(branch => {
-      if (isManager()) {
-        return branch.id === userBranchId;
-      }
-      return true;
-    });
-  }, [branches, isManager, userBranchId]);
-
-  // Función auxiliar
   const generateZReport = async (branchId = selectedBranch, from = startOfDay(new Date()).getTime(), to = endOfDay(new Date()).getTime()) => {
     try {
       const filtered = sales.filter(s => (branchId === 'all' ? true : s.branchId === branchId) && (s.date || 0) >= from && (s.date || 0) <= to);
@@ -212,25 +205,6 @@ export default function DashboardPage() {
       toast({ title: 'Error', description: 'No se pudo generar el reporte Z', variant: 'destructive' });
     }
   };
-
-  // Verificación de acceso DESPUÉS de todos los hooks
-  if (!canAccessDashboard()) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <AlertTriangle className="h-16 w-16 text-orange-500" />
-        <h2 className="text-2xl font-bold text-gray-900">Acceso Denegado</h2>
-        <p className="text-gray-600 text-center max-w-md">
-          No tienes permisos para acceder al dashboard. Contacta a tu administrador si crees que esto es un error.
-        </p>
-        <p className="text-sm text-gray-500">
-          Rol actual: <span className="font-medium">{userRole || 'No definido'}</span>
-        </p>
-        <Button asChild>
-          <Link href="/sales">Ir a Ventas</Link>
-        </Button>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -265,39 +239,50 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select 
-            value={selectedBranch} 
-            onValueChange={(value) => {
-              if (isManager() && userBranchId && value !== userBranchId && value !== 'all') {
-                toast({
-                  title: 'Acceso Restringido',
-                  description: 'Solo puedes ver los datos de tu sucursal asignada.',
-                  variant: 'destructive'
-                });
-                return;
-              }
-              setSelectedBranch(value);
-            }}
-            disabled={isManager()}
-          >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Filtrar por sucursal" />
-            </SelectTrigger>
-            <SelectContent>
-              {(isOwner() || isAdmin()) && (
-                <SelectItem value="all">Todas las Sucursales</SelectItem>
-              )}
-              {filteredBranches.map(branch => (
-                <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select 
+                    value={selectedBranch} 
+                    onValueChange={(value) => {
+                        // Managers solo pueden ver su propia sucursal
+                        if (isManager() && userBranchId && value !== userBranchId && value !== 'all') {
+                            toast({
+                                title: 'Acceso Restringido',
+                                description: 'Solo puedes ver los datos de tu sucursal asignada.',
+                                variant: 'destructive'
+                            });
+                            return;
+                        }
+                        setSelectedBranch(value);
+                    }}
+                    disabled={isManager()} // Deshabilitar selector para managers
+                >
+                    <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Filtrar por sucursal" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {/* Owner y Admin pueden ver todas las sucursales */}
+                        {(isOwner() || isAdmin()) && (
+                            <SelectItem value="all">Todas las Sucursales</SelectItem>
+                        )}
+                        {branches
+                            .filter(branch => {
+                                // Managers solo ven su sucursal
+                                if (isManager()) {
+                                    return branch.id === userBranchId;
+                                }
+                                // Owner y Admin ven todas
+                                return true;
+                            })
+                            .map(branch => (
+                                <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                            ))
+                        }
+                    </SelectContent>
+                </Select>
+            </div>
       </div>
       
-      {/* KPIs */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -319,43 +304,41 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">S/{kpis.avgTicket.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">
-              Por transacción
+              Por transacción hoy
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Depósitos de Reservas</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Depósitos Pendientes</CardTitle>
+            <Lock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">S/{kpis.totalDeposits.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">
-              {kpis.pendingDeposits} reservas pendientes{selectedBranch === 'all' ? ' (todas las sucursales)' : ''}
+              {kpis.pendingDeposits} reservas con adelanto
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Estado de Caja</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {cashSession ? (
-                <span className="text-green-600">Abierta</span>
-              ) : (
-                <span className="text-red-600">Cerrada</span>
-              )}
+              {cashSession?.status === 'open' ? 'Abierta' : 'Cerrada'}
             </div>
             <p className="text-xs text-muted-foreground">
-              {cashSession ? `Desde: ${new Date(cashSession.openedAt).toLocaleTimeString()}` : 'Sin sesión activa'}
+              {cashSession?.status === 'open' 
+                ? `Desde ${new Date(cashSession.openTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
+                : 'Sesión no activa'
+              }
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Gráficos */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         <Card className="lg:col-span-4">
           <CardHeader>
@@ -364,13 +347,13 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="pl-2">
             <ChartContainer config={{}} className="h-[300px] w-full">
-              <BarChart data={weeklyData}>
-                <CartesianGrid vertical={false} />
-                <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} />
-                <YAxis tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => `S/${value}`} />
-                <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <BarChart data={weeklyData}>
+                  <CartesianGrid vertical={false} />
+                  <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} tickFormatter={(value) => `S/${value}`} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                </BarChart>
             </ChartContainer>
           </CardContent>
         </Card>
@@ -382,24 +365,25 @@ export default function DashboardPage() {
           <CardContent>
             {paymentDist.length > 0 ? (
               <ChartContainer config={{}} className="h-[300px] w-full">
-                <PieChart>
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Pie data={paymentDist} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={80} labelLine={false} label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
-                    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                    const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
-                    const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
-                    return (
-                      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central">
-                        {`${(percent * 100).toFixed(0)}%`}
-                      </text>
-                    );
-                  }}>
-                    {paymentDist.map((entry, index) => (
-                      <Cell key={`cell-${entry.name}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Legend />
-                </PieChart>
+                      <PieChart>
+                          <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                          <Pie data={paymentDist} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={80} labelLine={false} label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
+                              const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                              const x = cx + radius * Math.cos(-midAngle * (Math.PI / 180));
+                              const y = cy + radius * Math.sin(-midAngle * (Math.PI / 180));
+                              return (
+                                  <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central">
+                                      {`${(percent * 100).toFixed(0)}%`}
+                                  </text>
+                              );
+                          }}>
+                              {paymentDist.map((entry, index) => (
+                                  <Cell key={`cell-${entry.name}`} fill={entry.color} />
+                              ))}
+                          </Pie>
+                          <Legend />
+                      </PieChart>
+              </ChartContainer>
               </ChartContainer>
             ) : (
               <div className="h-[300px] flex items-center justify-center text-muted-foreground">
@@ -410,32 +394,30 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Top productos */}
-      <div className="grid gap-4 md:grid-cols-1">
-        <Card>
+       <Card>
           <CardHeader>
-            <CardTitle>Productos Más Vendidos (Hoy)</CardTitle>
-            <CardDescription>Ranking de productos por unidades vendidas.</CardDescription>
+            <CardTitle>Top 5 Productos Más Vendidos (Hoy)</CardTitle>
+            <CardDescription>Los productos que más han vendido durante el día de hoy.</CardDescription>
           </CardHeader>
           <CardContent>
             {topProducts.length > 0 ? (
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>Producto</TableHead>
-                    <TableHead className="text-right">Unidades</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topProducts.map(item => (
-                    <TableRow key={item.sku}>
-                      <TableCell className="font-mono">{item.sku}</TableCell>
-                      <TableCell className="font-medium">{item.name}</TableCell>
-                      <TableCell className="font-bold text-right">{item.units}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+                  <TableHeader>
+                      <TableRow>
+                          <TableHead>SKU</TableHead>
+                          <TableHead>Producto</TableHead>
+                          <TableHead className="text-right">Unidades Vendidas</TableHead>
+                      </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                      {topProducts.map(item => (
+                          <TableRow key={item.sku}>
+                              <TableCell className="font-mono">{item.sku}</TableCell>
+                              <TableCell className="font-medium">{item.name}</TableCell>
+                              <TableCell className="font-bold text-right">{item.units}</TableCell>
+                          </TableRow>
+                      ))}
+                  </TableBody>
               </Table>
             ) : (
               <div className="text-center text-muted-foreground py-8">
@@ -447,4 +429,5 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
 }

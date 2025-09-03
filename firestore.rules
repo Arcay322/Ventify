@@ -525,5 +525,65 @@ service cloud.firestore {
       // Delete reservations: only admins can delete
       allow delete: if isAdmin();
     }
+
+    match /reservation_deposits/{depositId} {
+      // Read reservation deposits: admin or users in same account who are managers/cashiers for the branch
+      allow read, list: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && (
+            isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+            || request.auth.uid == resource.data.createdBy
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+
+      // Create reservation deposits: cashiers and managers can create deposits for their branch
+      allow create: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || isManagerForBranch(request.resource.data.branchId)
+        || isCashierForBranch(request.resource.data.branchId)
+      ) && (
+        // Creating user must be set correctly
+        request.resource.data.createdBy == request.auth.uid
+        // Must have valid status
+        && request.resource.data.status == 'active'
+      );
+
+      // Update reservation deposits: managers/cashiers for the branch can update status, admin can do anything
+      allow update: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || (
+          (
+            isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+          )
+          && (
+            // Can update status from active to converted or refunded
+            (
+              resource.data.status == 'active' 
+              && (
+                request.resource.data.status == 'converted' 
+                || request.resource.data.status == 'refunded'
+              )
+            )
+            // Can update other fields while status remains the same
+            || request.resource.data.status == resource.data.status
+          )
+        )
+      );
+
+      // Delete reservation deposits: only admins can delete
+      allow delete: if isAdmin();
+    }
   }
 }
