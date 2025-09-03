@@ -875,26 +875,32 @@ export default function SalesPage() {
                                 <CardHeader>
                                     <CardTitle className="flex items-center justify-between">
                                         <span>Seleccionar Productos</span>
-                                        <div className="text-xs text-muted-foreground font-normal">
-                                            F1: Pagar | F2: Limpiar | F3: Buscar | ESC: Limpiar búsqueda
-                                        </div>
                                     </CardTitle>
-                                            <div className="flex items-center gap-4">
-                                                <div className="relative w-full">
-                                                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                                    <Input 
-                                                        id="product-search"
-                                                        type="search" 
-                                                        placeholder="Buscar por nombre o SKU... (F3)" 
-                                                        className="w-full pl-8" 
-                                                        value={searchQuery} 
+                                            <div className="flex items-end gap-4 mt-4">
+                                                <div className="relative flex-1">
+                                                    <label className="text-xs text-muted-foreground mb-1 block">Buscar productos</label>
+                                                    <div className="relative">
+                                                        <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                                        <Input 
+                                                            id="product-search"
+                                                            type="search" 
+                                                            placeholder="Buscar por nombre o SKU..." 
+                                                            className="w-full pl-8" 
+                                                            value={searchQuery} 
                                                         onChange={(e) => setSearchQuery(e.target.value)} 
                                                     />
+                                                    </div>
                                                 </div>
                                                 <div className="w-48">
-                                                    <label className="text-xs text-muted-foreground">Sucursal</label>
-                                                    <select value={selectedBranch || ''} onChange={(e) => setSelectedBranch(e.target.value)} className="w-full border rounded p-1">
-                                                        {branches.map(b => (<option key={b.id} value={b.id}>{b.name}</option>))}
+                                                    <label className="text-xs text-muted-foreground mb-1 block">Sucursal</label>
+                                                    <select 
+                                                        value={selectedBranch || ''} 
+                                                        onChange={(e) => setSelectedBranch(e.target.value)} 
+                                                        className="w-full h-10 px-3 border border-input bg-background rounded-md text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                                                    >
+                                                        {branches.map(b => (
+                                                            <option key={b.id} value={b.id}>{b.name}</option>
+                                                        ))}
                                                     </select>
                                                 </div>
                                             </div>
@@ -1090,7 +1096,14 @@ export default function SalesPage() {
                                                     <div className="flex items-center justify-between">
                                                         <Label htmlFor="discount" className='text-muted-foreground'>Descuento</Label>
                                                         <div className="flex w-full max-w-36 items-center space-x-2">
-                                                            <Input type="number" id="discount" placeholder="0.00" value={discountInput} onChange={(e) => setDiscountInput(e.target.value)} className="h-8 text-right" />
+                                                            <Input 
+                                                                type="number" 
+                                                                id="discount" 
+                                                                placeholder="0.00" 
+                                                                value={discountInput} 
+                                                                onChange={(e) => setDiscountInput(e.target.value)} 
+                                                                className="h-8 text-right [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]" 
+                                                            />
                                                             <Button size="sm" variant="outline" onClick={applyDiscount} className='h-8' disabled={isApplyingDiscount}>
                                                                 {isApplyingDiscount ? 'Aplicando...' : 'Aplicar'}
                                                             </Button>
@@ -1381,22 +1394,22 @@ export default function SalesPage() {
                                         </div>
                                     </div>
                                 </CardContent>
-                                <CardFooter className="space-y-2">
+                                <CardFooter className="flex flex-col gap-2 p-4">
                                     {/* Botón para crear reserva */}
                                     <Button 
-                                        className="w-full" 
+                                        className="w-full text-sm" 
                                         variant="outline"
                                         size="sm"
                                         onClick={handleCreateReservation}
                                         disabled={cart.length === 0}
                                     >
-                                        <Calendar className="mr-2 h-4 w-4" />
-                                        Crear Reserva de Pedido
+                                        <Calendar className="mr-2 h-4 w-4 flex-shrink-0" />
+                                        <span className="truncate">Crear Reserva de Pedido</span>
                                     </Button>
                                     
                                     {/* Botón principal de pago */}
                                     <Button 
-                                        className="w-full" 
+                                        className="w-full text-sm min-h-[44px]" 
                                         size="lg" 
                                         onClick={processPayment} 
                                         style={{ 
@@ -1405,13 +1418,26 @@ export default function SalesPage() {
                                         }} 
                                         disabled={cart.length === 0 || isProcessingPayment || !activeSession}
                                     >
-                                        {reservationToComplete ? <Calendar className="mr-2 h-4 w-4" /> : <CreditCard className="mr-2 h-4 w-4" />}
-                                        {isProcessingPayment ? 
-                                            'Procesando...' : 
-                                            reservationToComplete ? 
-                                                `Completar Reserva #${reservationToComplete.reservationNumber} - S/${total.toFixed(2)}` :
-                                                `Procesar Pago - S/${total.toFixed(2)} (${paymentMethod})`
-                                        }
+                                        <div className="flex items-center justify-center w-full">
+                                            {reservationToComplete ? (
+                                                <Calendar className="mr-2 h-4 w-4 flex-shrink-0" />
+                                            ) : (
+                                                <CreditCard className="mr-2 h-4 w-4 flex-shrink-0" />
+                                            )}
+                                            <span className="truncate">
+                                                {isProcessingPayment ? 
+                                                    'Procesando...' : 
+                                                    reservationToComplete ? 
+                                                        `Completar Reserva #${reservationToComplete.reservationNumber}` :
+                                                        `Procesar Pago - S/${total.toFixed(2)}`
+                                                }
+                                            </span>
+                                        </div>
+                                        {reservationToComplete && (
+                                            <div className="text-xs opacity-75 mt-1">
+                                                S/${total.toFixed(2)}
+                                            </div>
+                                        )}
                                     </Button>
                                 </CardFooter>
                             </Card>

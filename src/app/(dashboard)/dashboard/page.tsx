@@ -414,6 +414,13 @@ export default function DashboardPage() {
       action: () => generateZReport()
     },
     {
+      title: 'Ver Reportes',
+      description: 'Historial de reportes',
+      icon: FileText,
+      color: 'bg-indigo-500',
+      action: () => window.location.href = '/reports'
+    },
+    {
       title: 'Actualizar Datos',
       description: 'Refrescar dashboard',
       icon: RefreshCw,
@@ -426,13 +433,6 @@ export default function DashboardPage() {
       icon: Package2,
       color: 'bg-purple-500',
       action: () => window.location.href = '/products'
-    },
-    {
-      title: 'Configuración',
-      description: 'Ajustes del sistema',
-      icon: Settings,
-      color: 'bg-orange-500',
-      action: () => window.location.href = '/settings'
     }
   ];
 

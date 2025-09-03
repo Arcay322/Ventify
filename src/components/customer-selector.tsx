@@ -140,7 +140,7 @@ export function CustomerSelector({ selectedCustomer, onCustomerSelect }: Custome
             </Button>
           </div>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
               <PopoverTrigger asChild>
                 <Button variant="outline" className="flex-1 justify-start h-11">
@@ -226,7 +226,8 @@ export function CustomerSelector({ selectedCustomer, onCustomerSelect }: Custome
             
             <Button 
               variant="outline" 
-              size="sm"
+              size="icon"
+              className="h-11 w-11 flex-shrink-0"
               onClick={() => setIsCreateModalOpen(true)}
             >
               <Plus className="h-4 w-4" />
