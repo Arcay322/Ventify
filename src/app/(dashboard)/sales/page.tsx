@@ -2,6 +2,7 @@
 "use client"
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ type CartItem = Product & {
 
 export default function SalesPage() {
     const authState = useAuth();
+    const searchParams = useSearchParams();
     const [products, setProducts] = useState<Product[]>([]);
     const [cart, setCart] = useState<CartItem[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +83,9 @@ export default function SalesPage() {
     const [isReservationModalOpen, setIsReservationModalOpen] = useState(false);
     const [reservationToComplete, setReservationToComplete] = useState<Reservation | null>(null);
     const [isReservationReceiptModalOpen, setIsReservationReceiptModalOpen] = useState(false);
+    
+    // Control de tabs
+    const activeTab = searchParams.get('tab') || 'pos';
     const [completedReservation, setCompletedReservation] = useState<Reservation | null>(null);
 
     // Helper function to get available stock (physical - reserved)
@@ -862,7 +867,17 @@ export default function SalesPage() {
         <>
             {/* Debug Component removido - ya no es necesario */}
             
-            <Tabs defaultValue="pos">
+            <Tabs value={activeTab} onValueChange={(value) => {
+                // Actualizar URL con el nuevo tab
+                const newParams = new URLSearchParams(searchParams.toString());
+                if (value !== 'pos') {
+                    newParams.set('tab', value);
+                } else {
+                    newParams.delete('tab');
+                }
+                const newUrl = newParams.toString() ? `?${newParams.toString()}` : '';
+                window.history.pushState({}, '', `/sales${newUrl}`);
+            }}>
                 <TabsList className="mb-4">
                     <TabsTrigger value="pos">Punto de Venta</TabsTrigger>
                     <TabsTrigger value="reservations">Reservas de Pedidos</TabsTrigger>

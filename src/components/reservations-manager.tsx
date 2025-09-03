@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +41,7 @@ interface ReservationsManagerProps {
 export function ReservationsManager({ branchId, onCompleteReservation }: ReservationsManagerProps) {
     const authState = useAuth();
     const { toast } = useToast();
+    const router = useRouter();
     const [reservations, setReservations] = useState<Reservation[]>([]);
     const [filteredReservations, setFilteredReservations] = useState<Reservation[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -107,15 +109,18 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
     };
 
     const handleCompleteReservation = (reservation: Reservation) => {
+        // Primero ejecutar la función de llenar el carrito si existe
         if (onCompleteReservation) {
             onCompleteReservation(reservation);
-        } else {
-            toast({
-                title: "Función no disponible",
-                description: "Esta función debe ser implementada desde el módulo de ventas",
-                variant: "destructive"
-            });
         }
+        
+        // Luego redirigir al tab de punto de venta
+        router.push('/sales?tab=pos');
+        
+        toast({
+            title: "Redirigiendo a punto de venta",
+            description: `Procesando reserva #${reservation.reservationNumber}`,
+        });
     };
 
     const handleCancelReservation = async () => {
@@ -220,291 +225,490 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
                         </div>
                     ) : (
                         <div className="grid gap-4">
-                            {filteredReservations.map((reservation) => (
-                                <Card key={reservation.id} className={`border ${
-                                    isExpiringSoon(reservation) ? 'border-orange-300 bg-orange-50/50' : ''
-                                }`}>
-                                    <CardContent className="p-4">
-                                        <div className="flex items-start justify-between mb-4">
-                                            <div>
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <h3 className="font-semibold">
-                                                        Reserva #{reservation.reservationNumber}
-                                                    </h3>
-                                                    {getStatusBadge(reservation.status)}
-                                                    {isExpiringSoon(reservation) && (
-                                                        <Badge variant="outline" className="text-orange-600">
-                                                            <AlertTriangle className="h-3 w-3 mr-1" />
-                                                            Vence pronto
-                                                        </Badge>
-                                                    )}
+                            {filteredReservations.map((reservation) => {
+                                const daysUntilExpiry = reservation.expiryDate && reservation.status === 'pending' 
+                                    ? Math.ceil((reservation.expiryDate - Date.now()) / (1000 * 60 * 60 * 24))
+                                    : null;
+                                const isUrgent = daysUntilExpiry !== null && daysUntilExpiry <= 1;
+                                const isExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry <= 2 && daysUntilExpiry > 1;
+                                
+                                return (
+                                    <Card 
+                                        key={reservation.id} 
+                                        className={`border transition-all hover:shadow-lg hover:border-blue-300 cursor-pointer relative overflow-hidden ${
+                                            isUrgent ? 'border-red-300 bg-gradient-to-r from-red-50 to-red-100/50' : 
+                                            isExpiringSoon ? 'border-orange-300 bg-gradient-to-r from-orange-50 to-orange-100/50' : 
+                                            'hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-blue-100/30'
+                                        }`}
+                                        onClick={() => {
+                                            setSelectedReservation(reservation);
+                                            setIsDetailModalOpen(true);
+                                        }}
+                                    >
+                                        {/* Barra de estado lateral */}
+                                        <div className={`absolute left-0 top-0 w-1 h-full ${
+                                            reservation.status === 'pending' ? 'bg-blue-500' :
+                                            reservation.status === 'completed' ? 'bg-green-500' :
+                                            reservation.status === 'cancelled' ? 'bg-red-500' :
+                                            'bg-gray-400'
+                                        }`} />
+                                        
+                                        <CardContent className="p-5 pl-6">
+                                            {/* Header con más información */}
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <h3 className="font-bold text-lg text-gray-900">
+                                                            #{reservation.reservationNumber}
+                                                        </h3>
+                                                        {getStatusBadge(reservation.status)}
+                                                        {isUrgent && (
+                                                            <Badge variant="outline" className="text-red-600 border-red-300 bg-red-50">
+                                                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                                                Urgente
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <User className="h-4 w-4 text-muted-foreground" />
+                                                            <span className="font-semibold text-gray-700">{reservation.customerName}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                                                            <span className="flex items-center gap-1">
+                                                                <Calendar className="h-3 w-3" />
+                                                                {format(new Date(reservation.date), "dd MMM", { locale: es })}
+                                                            </span>
+                                                            {reservation.customerPhone && (
+                                                                <span className="flex items-center gap-1">
+                                                                    <Phone className="h-3 w-3" />
+                                                                    {reservation.customerPhone}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <p className="text-sm text-muted-foreground">
-                                                    Creada: {format(new Date(reservation.date), "PPP p", { locale: es })}
-                                                </p>
-                                                {reservation.expiryDate && reservation.status === 'pending' && (
-                                                    <p className="text-sm text-muted-foreground">
-                                                        Vence: {format(new Date(reservation.expiryDate), "PPP", { locale: es })}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="font-bold text-lg">S/{reservation.total.toFixed(2)}</p>
-                                                <p className="text-sm text-muted-foreground">
-                                                    {reservation.items.reduce((acc, item) => acc + item.quantity, 0)} productos
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid md:grid-cols-3 gap-4 mb-4">
-                                            <div>
-                                                <h4 className="font-medium text-sm mb-1 flex items-center gap-1">
-                                                    <User className="h-3 w-3" />
-                                                    Cliente
-                                                </h4>
-                                                <p className="text-sm">{reservation.customerName}</p>
-                                                {reservation.customerPhone && (
-                                                    <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                                        <Phone className="h-3 w-3" />
-                                                        {reservation.customerPhone}
-                                                    </p>
-                                                )}
-                                                {reservation.customerEmail && (
-                                                    <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                                        <Mail className="h-3 w-3" />
-                                                        {reservation.customerEmail}
-                                                    </p>
-                                                )}
-                                            </div>
-
-                                            <div>
-                                                <h4 className="font-medium text-sm mb-1">Productos</h4>
-                                                <div className="space-y-1 max-h-20 overflow-y-auto">
-                                                    {reservation.items.slice(0, 3).map((item, index) => (
-                                                        <p key={index} className="text-sm text-muted-foreground">
-                                                            {item.quantity}x {item.name}
+                                                
+                                                <div className="text-right">
+                                                    <p className="font-bold text-2xl text-gray-900">S/{reservation.total.toFixed(2)}</p>
+                                                    <div className="text-sm space-y-1">
+                                                        <p className="text-muted-foreground">
+                                                            {reservation.items.reduce((acc, item) => acc + item.quantity, 0)} productos
                                                         </p>
+                                                        {reservation.depositAmount && reservation.depositAmount > 0 && (
+                                                            <p className="text-green-600 font-semibold">
+                                                                Depósito: S/{reservation.depositAmount.toFixed(2)}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Productos con mejor visualización */}
+                                            <div className="mb-4 p-3 bg-gray-50/50 rounded-lg border">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <h4 className="font-medium text-sm text-gray-700 flex items-center gap-1">
+                                                        <FileText className="h-3 w-3" />
+                                                        Productos reservados
+                                                    </h4>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {reservation.items.length} {reservation.items.length === 1 ? 'artículo' : 'artículos'}
+                                                    </span>
+                                                </div>
+                                                
+                                                <div className="space-y-2 max-h-20 overflow-y-auto">
+                                                    {reservation.items.slice(0, 2).map((item, index) => (
+                                                        <div key={index} className="flex items-center gap-2 text-sm">
+                                                            <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-xs font-semibold text-blue-700">
+                                                                {item.quantity}
+                                                            </div>
+                                                            <span className="flex-1 truncate font-medium">{item.name}</span>
+                                                            <span className="text-muted-foreground">S/{item.price.toFixed(2)}</span>
+                                                        </div>
                                                     ))}
-                                                    {reservation.items.length > 3 && (
-                                                        <p className="text-sm text-muted-foreground">
-                                                            +{reservation.items.length - 3} más...
-                                                        </p>
+                                                    {reservation.items.length > 2 && (
+                                                        <div className="text-xs text-muted-foreground text-center py-1">
+                                                            +{reservation.items.length - 2} productos más...
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
 
-                                            <div>
-                                                {reservation.depositAmount && reservation.depositAmount > 0 && (
-                                                    <div className="mb-2">
-                                                        <h4 className="font-medium text-sm mb-1">Depósito</h4>
-                                                        <p className="text-sm font-semibold text-green-600">
-                                                            S/{reservation.depositAmount.toFixed(2)}
-                                                        </p>
+                                            {/* Información de tiempo y progreso */}
+                                            {daysUntilExpiry !== null && reservation.status === 'pending' && (
+                                                <div className="mb-4 p-3 bg-blue-50/50 rounded-lg border border-blue-200">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="text-sm font-medium text-blue-700 flex items-center gap-1">
+                                                            <Clock className="h-3 w-3" />
+                                                            Tiempo restante
+                                                        </span>
+                                                        <span className={`text-sm font-semibold ${
+                                                            isUrgent ? 'text-red-600' : 
+                                                            isExpiringSoon ? 'text-orange-600' : 
+                                                            'text-blue-600'
+                                                        }`}>
+                                                            {daysUntilExpiry === 0 ? 'Vence hoy' :
+                                                             daysUntilExpiry === 1 ? 'Vence mañana' :
+                                                             `${daysUntilExpiry} días`}
+                                                        </span>
                                                     </div>
-                                                )}
-                                                {reservation.notes && (
-                                                    <div>
-                                                        <h4 className="font-medium text-sm mb-1">Notas</h4>
-                                                        <p className="text-sm text-muted-foreground line-clamp-2">
-                                                            {reservation.notes}
-                                                        </p>
+                                                    <div className="w-full bg-blue-200 rounded-full h-2.5">
+                                                        <div 
+                                                            className={`h-2.5 rounded-full transition-all ${
+                                                                isUrgent ? 'bg-red-500' :
+                                                                isExpiringSoon ? 'bg-orange-500' :
+                                                                'bg-blue-500'
+                                                            }`}
+                                                            style={{ 
+                                                                width: `${Math.max(15, Math.min(100, (7 - daysUntilExpiry) / 7 * 100))}%` 
+                                                            }}
+                                                        />
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
+                                                </div>
+                                            )}
 
-                                        <div className="flex gap-2 pt-2 border-t">
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => {
-                                                    setSelectedReservation(reservation);
-                                                    setIsDetailModalOpen(true);
-                                                }}
-                                            >
-                                                <Eye className="h-4 w-4 mr-2" />
-                                                Ver Detalles
-                                            </Button>
-                                            
-                                            {reservation.status === 'pending' && (
-                                                <>
+                                            {/* Notas si las hay */}
+                                            {reservation.notes && (
+                                                <div className="mb-4 p-2 bg-yellow-50/50 rounded border border-yellow-200">
+                                                    <p className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                                                        <FileText className="h-3 w-3" />
+                                                        Nota:
+                                                    </p>
+                                                    <p className="text-sm line-clamp-2">{reservation.notes}</p>
+                                                </div>
+                                            )}
+
+                                            {/* Footer con acciones mejoradas */}
+                                            <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                                                <div className="flex items-center gap-2">
                                                     <Button
+                                                        variant="outline"
                                                         size="sm"
-                                                        onClick={() => handleCompleteReservation(reservation)}
-                                                        className="bg-green-600 hover:bg-green-700"
-                                                    >
-                                                        <CreditCard className="h-4 w-4 mr-2" />
-                                                        Procesar Venta
-                                                    </Button>
-                                                    <Button
-                                                        variant="destructive"
-                                                        size="sm"
-                                                        onClick={() => {
+                                                        className="h-8 px-3 text-xs"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
                                                             setSelectedReservation(reservation);
-                                                            setIsCancelModalOpen(true);
+                                                            setIsDetailModalOpen(true);
                                                         }}
                                                     >
-                                                        <XCircle className="h-4 w-4 mr-2" />
-                                                        Cancelar
+                                                        <Eye className="h-3 w-3 mr-1" />
+                                                        Detalles
                                                     </Button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </CardContent>
-                                </Card>
-                            ))}
+                                                    
+                                                    {reservation.customerPhone && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-8 px-3 text-xs text-muted-foreground hover:text-foreground"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                window.open(`tel:${reservation.customerPhone}`, '_self');
+                                                            }}
+                                                        >
+                                                            <Phone className="h-3 w-3 mr-1" />
+                                                            Llamar
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                
+                                                <div className="flex items-center gap-2">
+                                                    {reservation.status === 'pending' ? (
+                                                        <>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 px-3 text-xs text-red-600 border-red-200 hover:bg-red-50"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedReservation(reservation);
+                                                                    setIsCancelModalOpen(true);
+                                                                }}
+                                                            >
+                                                                <XCircle className="h-3 w-3 mr-1" />
+                                                                Cancelar
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleCompleteReservation(reservation);
+                                                                }}
+                                                                className="bg-green-600 hover:bg-green-700 h-8 px-4 font-semibold"
+                                                            >
+                                                                <CreditCard className="h-3 w-3 mr-2" />
+                                                                Procesar Venta
+                                                            </Button>
+                                                        </>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                            {reservation.status === 'completed' && (
+                                                                <>
+                                                                    <CheckCircle className="h-4 w-4 text-green-500" />
+                                                                    <span>Completada</span>
+                                                                </>
+                                                            )}
+                                                            {reservation.status === 'cancelled' && (
+                                                                <>
+                                                                    <XCircle className="h-4 w-4 text-red-500" />
+                                                                    <span>Cancelada</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </CardContent>
+                                    </Card>
+                                );
+                            })}
                         </div>
                     )}
                 </CardContent>
             </Card>
 
-            {/* Modal de detalles */}
+            {/* Modal de detalles avanzado */}
             <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                     {selectedReservation && (
                         <>
                             <DialogHeader>
-                                <DialogTitle className="flex items-center gap-2">
-                                    <Calendar className="h-5 w-5" />
-                                    Detalles de Reserva #{selectedReservation.reservationNumber}
+                                <DialogTitle className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="h-5 w-5" />
+                                        Reserva #{selectedReservation.reservationNumber}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {getStatusBadge(selectedReservation.status)}
+                                        {selectedReservation.customerPhone && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => window.open(`tel:${selectedReservation.customerPhone}`, '_self')}
+                                            >
+                                                <Phone className="h-4 w-4 mr-2" />
+                                                Llamar
+                                            </Button>
+                                        )}
+                                        {selectedReservation.customerEmail && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => window.open(`mailto:${selectedReservation.customerEmail}`, '_self')}
+                                            >
+                                                <Mail className="h-4 w-4 mr-2" />
+                                                Email
+                                            </Button>
+                                        )}
+                                    </div>
                                 </DialogTitle>
-                                <DialogDescription>
-                                    {getStatusBadge(selectedReservation.status)}
+                                <DialogDescription className="text-base">
+                                    Gestiona todos los aspectos de esta reserva desde aquí
                                 </DialogDescription>
                             </DialogHeader>
 
-                            <div className="space-y-4">
-                                {/* Información general */}
-                                <div className="grid md:grid-cols-2 gap-4">
+                            <div className="grid md:grid-cols-2 gap-6">
+                                {/* Columna izquierda: Información principal */}
+                                <div className="space-y-6">
+                                    {/* Timeline de la reserva */}
                                     <div>
-                                        <h3 className="font-semibold mb-2">Información General</h3>
-                                        <div className="space-y-2 text-sm">
-                                            <div>
-                                                <span className="text-muted-foreground">Creada:</span>{' '}
-                                                {format(new Date(selectedReservation.date), "PPP p", { locale: es })}
+                                        <h3 className="font-semibold mb-3 flex items-center gap-2">
+                                            <Clock className="h-4 w-4" />
+                                            Línea de tiempo
+                                        </h3>
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                                                <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                                                <div className="flex-1">
+                                                    <div className="font-medium text-sm">Reserva creada</div>
+                                                    <div className="text-xs text-muted-foreground">
+                                                        {format(new Date(selectedReservation.date), "PPP p", { locale: es })}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            {selectedReservation.expiryDate && (
-                                                <div>
-                                                    <span className="text-muted-foreground">Vence:</span>{' '}
-                                                    {format(new Date(selectedReservation.expiryDate), "PPP", { locale: es })}
+                                            
+                                            {selectedReservation.depositAmount && selectedReservation.depositAmount > 0 && (
+                                                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                                                    <div className="w-2 h-2 bg-green-500 rounded-full" />
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-sm">Depósito recibido</div>
+                                                        <div className="text-xs text-muted-foreground">
+                                                            S/{selectedReservation.depositAmount.toFixed(2)}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
+
+                                            {selectedReservation.expiryDate && selectedReservation.status === 'pending' && (
+                                                <div className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg">
+                                                    <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-sm">Fecha límite</div>
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {format(new Date(selectedReservation.expiryDate), "PPP", { locale: es })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
                                             {selectedReservation.completedDate && (
-                                                <div>
-                                                    <span className="text-muted-foreground">Completada:</span>{' '}
-                                                    {format(new Date(selectedReservation.completedDate), "PPP p", { locale: es })}
+                                                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                                                    <div className="w-2 h-2 bg-green-500 rounded-full" />
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-sm">Venta completada</div>
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {format(new Date(selectedReservation.completedDate), "PPP p", { locale: es })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {selectedReservation.status === 'cancelled' && (
+                                                <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
+                                                    <div className="w-2 h-2 bg-red-500 rounded-full" />
+                                                    <div className="flex-1">
+                                                        <div className="font-medium text-sm">Reserva cancelada</div>
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {selectedReservation.cancellationReason || 'Sin razón especificada'}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
 
+                                    {/* Información del cliente */}
                                     <div>
-                                        <h3 className="font-semibold mb-2">Cliente</h3>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="font-medium">{selectedReservation.customerName}</div>
+                                        <h3 className="font-semibold mb-3 flex items-center gap-2">
+                                            <User className="h-4 w-4" />
+                                            Información del cliente
+                                        </h3>
+                                        <div className="p-4 border rounded-lg space-y-2">
+                                            <div className="font-medium text-lg">{selectedReservation.customerName}</div>
                                             {selectedReservation.customerPhone && (
-                                                <div className="flex items-center gap-1">
+                                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                                     <Phone className="h-3 w-3" />
-                                                    {selectedReservation.customerPhone}
+                                                    <span>{selectedReservation.customerPhone}</span>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-2 ml-auto"
+                                                        onClick={() => window.open(`tel:${selectedReservation.customerPhone}`, '_self')}
+                                                    >
+                                                        <Phone className="h-3 w-3" />
+                                                    </Button>
                                                 </div>
                                             )}
                                             {selectedReservation.customerEmail && (
-                                                <div className="flex items-center gap-1">
+                                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                                     <Mail className="h-3 w-3" />
-                                                    {selectedReservation.customerEmail}
+                                                    <span>{selectedReservation.customerEmail}</span>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-2 ml-auto"
+                                                        onClick={() => window.open(`mailto:${selectedReservation.customerEmail}`, '_self')}
+                                                    >
+                                                        <Mail className="h-3 w-3" />
+                                                    </Button>
                                                 </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Resumen financiero */}
+                                    <div>
+                                        <h3 className="font-semibold mb-3">Resumen financiero</h3>
+                                        <div className="p-4 border rounded-lg space-y-3">
+                                            <div className="flex justify-between text-sm">
+                                                <span>Subtotal:</span>
+                                                <span>S/{selectedReservation.subtotal.toFixed(2)}</span>
+                                            </div>
+                                            {selectedReservation.discount > 0 && (
+                                                <div className="flex justify-between text-sm text-red-600">
+                                                    <span>Descuento:</span>
+                                                    <span>-S/{selectedReservation.discount.toFixed(2)}</span>
+                                                </div>
+                                            )}
+                                            <Separator />
+                                            <div className="flex justify-between font-semibold">
+                                                <span>Total:</span>
+                                                <span>S/{selectedReservation.total.toFixed(2)}</span>
+                                            </div>
+                                            {selectedReservation.depositAmount && selectedReservation.depositAmount > 0 && (
+                                                <>
+                                                    <div className="flex justify-between text-sm text-green-600">
+                                                        <span>Depósito pagado:</span>
+                                                        <span>S/{selectedReservation.depositAmount.toFixed(2)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between font-medium text-orange-600">
+                                                        <span>Pendiente:</span>
+                                                        <span>S/{(selectedReservation.total - selectedReservation.depositAmount).toFixed(2)}</span>
+                                                    </div>
+                                                </>
                                             )}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Productos */}
-                                <div>
-                                    <h3 className="font-semibold mb-3">Productos Reservados</h3>
-                                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                                        {selectedReservation.items.map((item, index) => (
-                                            <div key={index} className="flex items-center gap-3 p-2 border rounded">
-                                                {item.imageUrl ? (
-                                                    <Image src={item.imageUrl} alt={item.name} width={40} height={40} className="rounded" />
-                                                ) : (
-                                                    <div className="w-10 h-10 bg-muted rounded" />
-                                                )}
-                                                <div className="flex-1">
-                                                    <div className="font-medium">{item.name}</div>
-                                                    <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div className="font-semibold">
-                                                        {item.quantity}x S/{item.price.toFixed(2)}
-                                                    </div>
-                                                    <div className="text-sm font-bold">
-                                                        S/{(item.quantity * item.price).toFixed(2)}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Totales */}
-                                <div className="border-t pt-4">
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between">
-                                            <span>Subtotal:</span>
-                                            <span>S/{selectedReservation.subtotal.toFixed(2)}</span>
-                                        </div>
-                                        {selectedReservation.discount > 0 && (
-                                            <div className="flex justify-between text-red-600">
-                                                <span>Descuento:</span>
-                                                <span>-S/{selectedReservation.discount.toFixed(2)}</span>
-                                            </div>
-                                        )}
-                                        {selectedReservation.depositAmount && selectedReservation.depositAmount > 0 && (
-                                            <div className="flex justify-between text-green-600">
-                                                <span>Depósito pagado:</span>
-                                                <span>S/{selectedReservation.depositAmount.toFixed(2)}</span>
-                                            </div>
-                                        )}
-                                        <div className="flex justify-between font-bold text-lg border-t pt-2">
-                                            <span>Total:</span>
-                                            <span>S/{selectedReservation.total.toFixed(2)}</span>
-                                        </div>
-                                        {selectedReservation.depositAmount && selectedReservation.depositAmount > 0 && (
-                                            <div className="flex justify-between font-medium text-orange-600">
-                                                <span>Pendiente por pagar:</span>
-                                                <span>S/{(selectedReservation.total - selectedReservation.depositAmount).toFixed(2)}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Notas */}
-                                {selectedReservation.notes && (
+                                {/* Columna derecha: Productos y notas */}
+                                <div className="space-y-6">
+                                    {/* Productos detallados */}
                                     <div>
-                                        <h3 className="font-semibold mb-2">Notas</h3>
-                                        <p className="text-sm p-3 bg-muted/50 rounded">
-                                            {selectedReservation.notes}
-                                        </p>
+                                        <h3 className="font-semibold mb-3">Productos reservados</h3>
+                                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                                            {selectedReservation.items.map((item, index) => (
+                                                <div key={index} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-muted/50">
+                                                    {item.imageUrl ? (
+                                                        <Image 
+                                                            src={item.imageUrl} 
+                                                            alt={item.name} 
+                                                            width={50} 
+                                                            height={50} 
+                                                            className="rounded object-cover" 
+                                                        />
+                                                    ) : (
+                                                        <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
+                                                            <FileText className="h-5 w-5 text-muted-foreground" />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-medium truncate">{item.name}</div>
+                                                        <div className="text-sm text-muted-foreground">SKU: {item.sku}</div>
+                                                        <div className="text-sm text-muted-foreground">
+                                                            {item.quantity}x S/{item.price.toFixed(2)} c/u
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="font-semibold">
+                                                            S/{(item.quantity * item.price).toFixed(2)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                )}
+
+                                    {/* Notas y comentarios */}
+                                    {selectedReservation.notes && (
+                                        <div>
+                                            <h3 className="font-semibold mb-3">Notas de la reserva</h3>
+                                            <div className="p-4 bg-muted/50 rounded-lg">
+                                                <p className="text-sm whitespace-pre-wrap">
+                                                    {selectedReservation.notes}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                            <DialogFooter>
+                            <DialogFooter className="mt-6 flex-col sm:flex-row gap-2">
                                 <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>
                                     Cerrar
                                 </Button>
                                 {selectedReservation.status === 'pending' && (
                                     <>
-                                        <Button
-                                            onClick={() => {
-                                                setIsDetailModalOpen(false);
-                                                handleCompleteReservation(selectedReservation);
-                                            }}
-                                            className="bg-green-600 hover:bg-green-700"
-                                        >
-                                            <CreditCard className="h-4 w-4 mr-2" />
-                                            Procesar Venta
-                                        </Button>
                                         <Button
                                             variant="destructive"
                                             onClick={() => {
@@ -514,6 +718,16 @@ export function ReservationsManager({ branchId, onCompleteReservation }: Reserva
                                         >
                                             <XCircle className="h-4 w-4 mr-2" />
                                             Cancelar Reserva
+                                        </Button>
+                                        <Button
+                                            onClick={() => {
+                                                setIsDetailModalOpen(false);
+                                                handleCompleteReservation(selectedReservation);
+                                            }}
+                                            className="bg-green-600 hover:bg-green-700"
+                                        >
+                                            <CreditCard className="h-4 w-4 mr-2" />
+                                            Procesar Venta Completa
                                         </Button>
                                     </>
                                 )}
