@@ -362,3 +362,31 @@ export const getCashRegisterReports = (callback: (reports: any[]) => void, accou
         callback([]);
     });
 };
+
+// Get active session for current branch
+export const getActiveSession = async (branchId: string): Promise<CashRegisterSession | null> => {
+    try {
+        const q = query(
+            collection(db, 'cash_register_sessions'),
+            where('branchId', '==', branchId),
+            where('status', '==', 'open'),
+            orderBy('openedAt', 'desc'),
+            limit(1)
+        );
+        
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+            return null;
+        }
+        
+        const doc = querySnapshot.docs[0];
+        return {
+            id: doc.id,
+            ...doc.data()
+        } as CashRegisterSession;
+    } catch (error) {
+        console.error('Error getting active session:', error);
+        throw error;
+    }
+};

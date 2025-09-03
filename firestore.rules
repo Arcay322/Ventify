@@ -32,6 +32,22 @@ service cloud.firestore {
       );
     }
 
+    // Dashboard access: only owner, admin, and manager roles can access dashboard data
+    function canAccessDashboard() {
+      return isAuthenticated() && (
+        isAdmin()
+        || (request.auth.token.role == 'manager')
+        || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner'
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'manager'
+          )
+        )
+      );
+    }
+
     // Cashier check: true if caller is cashier for the specific branch (or higher role)
     function isCashierForBranch(branchId) {
       return isAuthenticated() && (
@@ -348,6 +364,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /discount_settings/{accountId} {
+      allow read: if isAuthenticated() && (isAdmin() || sameAccount(accountId));
+      allow write: if isAdmin() || (isAuthenticated() && sameAccount(accountId));
+    }
+
     match /accounts/{accountId} {
       allow read: if isAuthenticated() && (isAdmin() || sameAccount(accountId));
       allow write: if isAdmin();
@@ -440,6 +461,68 @@ service cloud.firestore {
       );
 
       // Delete transfers: only admins can delete
+      allow delete: if isAdmin();
+    }
+
+    match /reservations/{reservationId} {
+      // Read reservations: admin or users in same account who are managers/cashiers for the branch
+      allow read, list: if isAuthenticated() && (
+        isAdmin()
+        || (
+          resource.exists() && sameAccount(resource.data.accountId) && (
+            isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+            || request.auth.uid == resource.data.createdBy
+          )
+        )
+        // Allow queries by authenticated users (resource may not exist during queries)
+        || (
+          request.auth.token.accountId != null
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountId != null
+          )
+        )
+      );
+
+      // Create reservations: cashiers and managers can create reservations for their branch
+      allow create: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || isManagerForBranch(request.resource.data.branchId)
+        || isCashierForBranch(request.resource.data.branchId)
+      ) && (
+        // Creating user must be set correctly
+        request.resource.data.createdBy == request.auth.uid
+        // Customer name is required
+        && request.resource.data.customerName != null
+        && request.resource.data.customerName != ""
+      );
+
+      // Update reservations: managers/cashiers for the branch can update status, admin can do anything
+      allow update: if isAuthenticated() && sameAccount(request.resource.data.accountId) && (
+        isAdmin()
+        || (
+          (
+            isManagerForBranch(resource.data.branchId)
+            || isCashierForBranch(resource.data.branchId)
+          )
+          && (
+            // Can update status from pending to cancelled or completed
+            (
+              resource.data.status == 'pending' 
+              && (
+                request.resource.data.status == 'cancelled' 
+                || request.resource.data.status == 'completed'
+                || request.resource.data.status == 'expired'
+              )
+            )
+            // Can update other fields while status remains the same or transitions are valid
+            || request.resource.data.status == resource.data.status
+          )
+        )
+      );
+
+      // Delete reservations: only admins can delete
       allow delete: if isAdmin();
     }
   }

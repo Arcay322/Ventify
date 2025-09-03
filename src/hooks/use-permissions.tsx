@@ -15,7 +15,8 @@ export type Permission =
   | 'manage_cash_register'
   | 'request_transfer'
   | 'approve_transfer'
-  | 'manage_transfers';
+  | 'manage_transfers'
+  | 'access_dashboard';
 
 export interface RolePermissions {
   owner: Permission[];
@@ -38,7 +39,8 @@ const ROLE_PERMISSIONS: RolePermissions = {
     'manage_cash_register',
     'request_transfer',
     'approve_transfer',
-    'manage_transfers'
+    'manage_transfers',
+    'access_dashboard'
   ],
   admin: [
     'register_sale',
@@ -53,7 +55,8 @@ const ROLE_PERMISSIONS: RolePermissions = {
     'manage_cash_register',
     'request_transfer',
     'approve_transfer',
-    'manage_transfers'
+    'manage_transfers',
+    'access_dashboard'
   ],
   manager: [
     'register_sale',
@@ -66,7 +69,8 @@ const ROLE_PERMISSIONS: RolePermissions = {
     'manage_cash_register',
     'request_transfer',
     'approve_transfer',
-    'manage_transfers'
+    'manage_transfers',
+    'access_dashboard'
   ],
   cashier: [
     'register_sale',
@@ -115,6 +119,10 @@ export function usePermissions() {
 
   const canViewReports = (): boolean => {
     return hasPermission('view_reports');
+  };
+
+  const canAccessDashboard = (): boolean => {
+    return hasPermission('access_dashboard');
   };
 
   const canRequestTransfer = (): boolean => {
@@ -246,6 +254,7 @@ export function usePermissions() {
     canManageUsers,
     canManageProducts,
     canViewReports,
+    canAccessDashboard,
     canRequestTransfer,
     canApproveTransfer,
     canManageTransfers,

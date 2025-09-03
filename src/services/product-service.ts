@@ -12,6 +12,7 @@ const productFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Product => {
         category: data.category,
         price: data.price,
         stock: data.stock || {},
+        reservedStock: data.reservedStock || {}, // Incluir stock reservado
         costPrice: data.costPrice || 0,
         sku: data.sku || '',
         imageUrl: data.imageUrl,
@@ -25,6 +26,7 @@ const productFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Product => {
         console.log(`📦 Product 'Silla' loaded from Firestore:`, {
             id: product.id,
             stock: product.stock,
+            reservedStock: product.reservedStock,
             accountId: product.accountId,
             fromFunction: 'productFromDoc'
         });
@@ -32,6 +34,18 @@ const productFromDoc = (doc: QueryDocumentSnapshot<DocumentData>): Product => {
     
     return product;
 }
+
+// Calcular stock disponible (físico - reservado)
+export const getAvailableStock = (product: Product, branchId: string): number => {
+    const physicalStock = product.stock[branchId] || 0;
+    const reservedStock = product.reservedStock?.[branchId] || 0;
+    return Math.max(0, physicalStock - reservedStock);
+};
+
+// Verificar si un producto tiene stock suficiente para venta
+export const hasAvailableStock = (product: Product, branchId: string, quantity: number): boolean => {
+    return getAvailableStock(product, branchId) >= quantity;
+};
 
 export const getProducts = (callback: (products: Product[]) => void, accountId?: string) => {
     const productsCollection = collection(db, PRODUCTS_COLLECTION);

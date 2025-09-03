@@ -23,7 +23,7 @@ import { ProductService } from '@/services/product-service';
 import { TransferService } from '@/services/transfer-service';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermissions } from '@/hooks/use-permissions';
-import { useToast } from '@/hooks/use-toast';
+import { StockReservationService } from '@/services/stock-reservation-service';
 import type { Branch } from '@/types/branch';
 import type { Product } from '@/types/product';
 import type { TransferRequest } from '@/types/transfer';
@@ -124,7 +124,7 @@ export function CreateTransferModal({
     const product = products.find(p => p.id === productId);
     if (!product) return;
 
-    const availableStock = sourceBranchId ? (product.stock[sourceBranchId] || 0) : 0;
+    const availableStock = sourceBranchId ? StockReservationService.getAvailableStock(product, sourceBranchId) : 0;
 
     setSelectedProducts(prev => prev.map((item, i) => 
       i === index ? {
@@ -155,7 +155,7 @@ export function CreateTransferModal({
         const product = products.find(p => p.id === item.productId);
         if (!product) return item;
 
-        const availableStock = product.stock[sourceBranchId] || 0;
+        const availableStock = product.stock[sourceBranchId] ? StockReservationService.getAvailableStock(product, sourceBranchId) : 0;
         return {
           ...item,
           availableStock,
@@ -270,7 +270,7 @@ export function CreateTransferModal({
   const sourceBranch = branches.find(b => b.id === sourceBranchId);
   const destinationBranch = branches.find(b => b.id === destinationBranchId);
   const availableProducts = products.filter(p => 
-    sourceBranchId && (p.stock[sourceBranchId] || 0) > 0
+    sourceBranchId && StockReservationService.getAvailableStock(p, sourceBranchId) > 0
   );
 
   return (
@@ -391,7 +391,7 @@ export function CreateTransferModal({
                                 <div>
                                   <div className="font-medium">{product.name}</div>
                                   <div className="text-sm text-gray-500">
-                                    SKU: {product.sku} | Stock: {product.stock[sourceBranchId] || 0}
+                                    SKU: {product.sku} | Stock Disponible: {sourceBranchId ? StockReservationService.getAvailableStock(product, sourceBranchId) : 0}
                                   </div>
                                 </div>
                               </SelectItem>

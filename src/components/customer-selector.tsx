@@ -131,7 +131,7 @@ export function CustomerSelector({ selectedCustomer, onCustomerSelect }: Custome
                   {selectedCustomer.phone || selectedCustomer.email || (!selectedCustomer.dni && 'Sin contacto')}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {selectedCustomer.totalPurchases} compras • S/{selectedCustomer.totalSpent.toFixed(2)} total
+                  {(selectedCustomer.totalPurchases || 0)} compras • S/{(selectedCustomer.totalSpent || 0).toFixed(2)} total
                 </div>
               </div>
             </div>

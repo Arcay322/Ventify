@@ -63,7 +63,7 @@ export default function InventoryPage() {
               <TableRow>
                 <TableHead>SKU</TableHead>
                 <TableHead>Producto</TableHead>
-                            {branches.map(branch => <TableHead key={branch.id} className="text-center">{branch.name}</TableHead>)}
+                {branches.map(branch => <TableHead key={branch.id} className="text-center">{branch.name}</TableHead>)}
                 <TableHead className="text-center">Stock Total</TableHead>
                 <TableHead className="text-center">Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>

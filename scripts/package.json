@@ -1,0 +1,7 @@
+{
+  "name": "expire-reservations",
+  "scripts": {
+    "expire-reservations": "node scripts/expire-reservations.js"
+  },
+  "description": "Script para vencer automáticamente las reservas expiradas y liberar su stock"
+}

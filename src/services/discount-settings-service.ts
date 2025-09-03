@@ -24,23 +24,30 @@ export const DEFAULT_DISCOUNT_SETTINGS: DiscountSettings = {
 export class DiscountSettingsService {
   static async getDiscountSettings(accountId: string): Promise<DiscountSettings> {
     try {
-      const settingsRef = doc(db, 'accounts', accountId, 'settings', 'discounts');
-      const settingsDoc = await getDoc(settingsRef);
-      
-      if (settingsDoc.exists()) {
-        return { ...DEFAULT_DISCOUNT_SETTINGS, ...settingsDoc.data() } as DiscountSettings;
-      }
-      
+      // Por ahora, siempre retornar configuración por defecto para evitar errores
+      console.log('Using default discount settings for account:', accountId);
       return DEFAULT_DISCOUNT_SETTINGS;
+      
+      // TODO: Descomentar cuando tengamos la configuración en Firestore
+      // const settingsRef = doc(db, 'discount_settings', accountId);
+      // const settingsDoc = await getDoc(settingsRef);
+      // 
+      // if (settingsDoc.exists()) {
+      //   return { ...DEFAULT_DISCOUNT_SETTINGS, ...settingsDoc.data() } as DiscountSettings;
+      // }
+      // 
+      // return DEFAULT_DISCOUNT_SETTINGS;
     } catch (error) {
       console.error('Error getting discount settings:', error);
+      // Siempre retornar configuración por defecto en caso de error
       return DEFAULT_DISCOUNT_SETTINGS;
     }
   }
 
   static async updateDiscountSettings(accountId: string, settings: DiscountSettings): Promise<void> {
     try {
-      const settingsRef = doc(db, 'accounts', accountId, 'settings', 'discounts');
+      // Cambiar de subcollection a collection principal
+      const settingsRef = doc(db, 'discount_settings', accountId);
       await setDoc(settingsRef, settings);
     } catch (error) {
       console.error('Error updating discount settings:', error);

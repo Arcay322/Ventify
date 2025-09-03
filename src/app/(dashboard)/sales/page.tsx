@@ -6,13 +6,16 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription }
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Separator } from '@/components/ui/separator';
-import { Trash2, X, Search, CreditCard, Wallet, Coins, CornerDownLeft, History, User } from "lucide-react";
+import { Trash2, X, Search, CreditCard, Wallet, Coins, CornerDownLeft, History, User, Calendar, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Product } from '@/types/product';
 import type { Sale } from '@/types/sale';
 import { Input } from '@/components/ui/input';
 import { ReceiptModal } from '@/components/receipt-modal';
 import { ReturnModal } from '@/components/return-modal';
+import { ReservationModal } from '@/components/reservation-modal';
+import { ReservationReceiptModal } from '@/components/reservation-receipt-modal';
+import { ReservationsManager } from '@/components/reservations-manager';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -28,6 +31,9 @@ import { DebugProducts } from '@/components/debug-products';
 import { getProducts } from '@/services/product-service';
 import { getBranches } from '@/services/branch-service';
 import { getSales, saveSale } from '@/services/sales-service';
+import { ReservationService } from '@/services/reservation-service';
+import { StockReservationService } from '@/services/stock-reservation-service';
+import { Reservation } from '@/types/reservation';
 import { getActiveCashRegisterSession, createCashRegisterSession, addSaleToActiveSession } from '@/services/cash-register-service';
 import { useAuth } from '@/hooks/use-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -70,6 +76,17 @@ export default function SalesPage() {
     const [cardAmount, setCardAmount] = useState<number>(0);
     const { canApplyDiscount, isCashier, getUserRole } = usePermissions();
     const [discountSettings, setDiscountSettings] = useState<DiscountSettings>(DEFAULT_DISCOUNT_SETTINGS);
+    
+    // Estados para reservas
+    const [isReservationModalOpen, setIsReservationModalOpen] = useState(false);
+    const [reservationToComplete, setReservationToComplete] = useState<Reservation | null>(null);
+    const [isReservationReceiptModalOpen, setIsReservationReceiptModalOpen] = useState(false);
+    const [completedReservation, setCompletedReservation] = useState<Reservation | null>(null);
+
+    // Helper function to get available stock (physical - reserved)
+    const getAvailableStock = useCallback((product: Product, branchId: string): number => {
+        return StockReservationService.getAvailableStock(product, branchId);
+    }, []);
 
     // Limpiar montos cuando se cambia el método de pago
     useEffect(() => {
@@ -88,6 +105,8 @@ export default function SalesPage() {
                     setDiscountSettings(settings);
                 } catch (error) {
                     console.error('Error loading discount settings:', error);
+                    // Usar configuraciones por defecto si hay error
+                    setDiscountSettings(DEFAULT_DISCOUNT_SETTINGS);
                 }
             }
         };
@@ -292,6 +311,52 @@ export default function SalesPage() {
             // Session counters are updated automatically in saveSale
             newSale.id = result.saleId;
             newSale.saleNumber = result.saleNumber;
+            
+            // Si esta venta completa una reserva, actualizarla
+            if (reservationToComplete) {
+                try {
+                    // Calcular totales originales de la reserva
+                    const originalTotal = reservationToComplete.items.reduce((sum, item) => 
+                        sum + (item.price * item.quantity), 0) - reservationToComplete.discount;
+                    const depositAmount = reservationToComplete.depositAmount || 0;
+                    const remainingAmount = originalTotal - depositAmount;
+                    
+                    // Si la reserva ya estaba completamente pagada, el pago final es 0
+                    // Si tenía saldo pendiente, el pago final es lo que se cobra ahora
+                    const finalPaymentAmount = remainingAmount <= 0 ? 0 : total;
+                    
+                    await ReservationService.completeReservation(
+                        reservationToComplete.id, 
+                        paymentMethod, 
+                        result.saleId,
+                        finalPaymentAmount
+                    );
+                    
+                    // Mostrar información completa del pago
+                    if (remainingAmount <= 0) {
+                        toast({
+                            title: "Reserva completada",
+                            description: `Reserva #${reservationToComplete.reservationNumber} completada. Ya estaba completamente pagada (S/${originalTotal.toFixed(2)}). Nota de pedido generada.`
+                        });
+                    } else {
+                        toast({
+                            title: "Reserva completada",
+                            description: `Reserva #${reservationToComplete.reservationNumber} completada. Total: S/${originalTotal.toFixed(2)} (Adelanto: S/${depositAmount.toFixed(2)} + Final: S/${finalPaymentAmount.toFixed(2)})`
+                        });
+                    }
+                    
+                    setReservationToComplete(null);
+                } catch (reservationError) {
+                    console.error('Error completing reservation:', reservationError);
+                    // La venta se guardó exitosamente, solo notificamos el error de reserva
+                    toast({
+                        title: "Venta procesada, error en reserva",
+                        description: "La venta se procesó correctamente pero hubo un error actualizando la reserva",
+                        variant: "destructive"
+                    });
+                }
+            }
+            
             setCompletedSale(newSale);
             setIsReceiptModalOpen(true);
             clearCart(true); // true = skip confirmation
@@ -306,7 +371,7 @@ export default function SalesPage() {
         } finally {
             setIsProcessingPayment(false);
         }
-    }, [cart, activeSession, total, subtotalWithoutTax, finalTax, discount, paymentMethod, selectedBranch, authState.userDoc?.branchId, authState.userDoc?.accountId, selectedCustomer, cashAmount, cardAmount, toast, clearCart]);
+    }, [cart, activeSession, total, subtotalWithoutTax, finalTax, discount, paymentMethod, selectedBranch, authState.userDoc?.branchId, authState.userDoc?.accountId, selectedCustomer, cashAmount, cardAmount, reservationToComplete, toast, clearCart]);
 
     // Shortcuts de teclado
     useEffect(() => {
@@ -430,9 +495,9 @@ export default function SalesPage() {
 
     const addToCart = useCallback((product: Product) => {
         const branchId = selectedBranch || Object.keys(product.stock || {})[0];
-        const branchStock = typeof product.stock?.[branchId] === 'number' ? product.stock[branchId] : 0;
-        if (branchStock <= 0) {
-            toast({ title: "Producto Agotado", description: `No queda stock de ${product.name} en la sucursal seleccionada.`, variant: "destructive" });
+        const availableStock = getAvailableStock(product, branchId);
+        if (availableStock <= 0) {
+            toast({ title: "Producto Agotado", description: `No queda stock disponible de ${product.name} en la sucursal seleccionada.`, variant: "destructive" });
             playSound('error');
             return;
         }
@@ -440,7 +505,7 @@ export default function SalesPage() {
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === product.id);
             if (existingItem) {
-                if (existingItem.quantity < branchStock) {
+                if (existingItem.quantity < availableStock) {
                     playSound('success');
                     return prevCart.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
                 } else {
@@ -459,7 +524,7 @@ export default function SalesPage() {
                 priceModifiedBy: undefined
             }];
         });
-    }, [selectedBranch, toast, playSound]);
+    }, [selectedBranch, toast, playSound, getAvailableStock]);
 
     const changeQuantity = useCallback((productId: string, quantity: number) => {
         if (quantity < 1) return; // No permitir cantidades menores a 1
@@ -468,12 +533,12 @@ export default function SalesPage() {
             if (item.id === productId) {
                 // Validar stock disponible
                 const branchId = selectedBranch || Object.keys(item.stock || {})[0];
-                const branchStock = typeof item.stock?.[branchId] === 'number' ? item.stock[branchId] : 0;
+                const availableStock = getAvailableStock(item, branchId);
                 
-                if (quantity > branchStock) {
+                if (quantity > availableStock) {
                     toast({ 
                         title: "Stock insuficiente", 
-                        description: `Solo hay ${branchStock} unidades disponibles de ${item.name}`, 
+                        description: `Solo hay ${availableStock} unidades disponibles de ${item.name}`, 
                         variant: "destructive" 
                     });
                     return item; // No cambiar la cantidad
@@ -483,7 +548,7 @@ export default function SalesPage() {
             }
             return item;
         }));
-    }, [selectedBranch, toast]);
+    }, [selectedBranch, toast, getAvailableStock]);
 
 
     const removeFromCart = (productId: string) => setCart(cart.filter(item => item.id !== productId));
@@ -624,6 +689,141 @@ export default function SalesPage() {
         setIsReturnModalOpen(true);
     }
 
+    // Función para crear una reserva
+    const handleCreateReservation = () => {
+        if (cart.length === 0) {
+            toast({
+                title: "Carrito vacío",
+                description: "Agrega productos al carrito antes de crear una reserva",
+                variant: "destructive"
+            });
+            return;
+        }
+        setIsReservationModalOpen(true);
+    };
+
+    // Función para completar una reserva (convertir en venta)
+    const handleCompleteReservation = (reservation: Reservation) => {
+        // Limpiar el carrito actual
+        clearCart(true);
+        
+        // Calcular el subtotal de la reserva original
+        const originalSubtotal = reservation.items.reduce((sum, item) => 
+            sum + (item.price * item.quantity), 0
+        );
+        
+        // Calcular el total original con descuento aplicado
+        const originalTotal = originalSubtotal - reservation.discount;
+        
+        // Si hay adelanto, calcular lo que queda por cobrar
+        const remainingAmount = originalTotal - (reservation.depositAmount || 0);
+        
+        // Si ya se pagó todo o más, procesar la venta directamente
+        if (remainingAmount <= 0) {
+            // Cargar los productos con precios originales para generar la nota
+            const reservationCart = reservation.items.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.price, // Precio original completo
+                quantity: item.quantity,
+                sku: item.sku,
+                originalPrice: item.originalPrice,
+                modifiedPrice: item.modifiedPrice,
+                priceModifiedBy: item.priceModifiedBy,
+                category: item.category || '',
+                costPrice: item.costPrice || 0,
+                stock: item.stock || {},
+                imageUrl: item.imageUrl,
+                hint: item.hint
+            }));
+            
+            setCart(reservationCart);
+            setDiscount(reservation.discount); // Descuento original completo
+            setDiscountInput(reservation.discount.toString());
+            
+            // Cargar información del cliente si existe
+            if (reservation.customerName) {
+                const customerData: Customer = {
+                    id: reservation.customerId || '',
+                    name: reservation.customerName,
+                    phone: reservation.customerPhone,
+                    email: reservation.customerEmail
+                };
+                setSelectedCustomer(customerData);
+            }
+            
+            // Marcar para completar (sin cobrar más)
+            setReservationToComplete(reservation);
+            
+            toast({
+                title: "Reserva completada",
+                description: `La reserva #${reservation.reservationNumber} ya está completamente pagada. Puede generar la nota de pedido.`,
+            });
+            
+            return;
+        }
+        
+        // Calcular factor de proporción para ajustar precios
+        const priceAdjustmentFactor = remainingAmount / originalTotal;
+        
+        // Cargar los productos con precios ajustados según lo que queda por pagar
+        const reservationCart = reservation.items.map(item => {
+            const adjustedPrice = item.price * priceAdjustmentFactor;
+            return {
+                id: item.id,
+                name: item.name,
+                price: adjustedPrice, // Precio proporcional al monto restante
+                quantity: item.quantity,
+                sku: item.sku,
+                originalPrice: item.originalPrice,
+                modifiedPrice: item.modifiedPrice,
+                priceModifiedBy: item.priceModifiedBy,
+                category: item.category || '',
+                costPrice: item.costPrice || 0,
+                stock: item.stock || {},
+                imageUrl: item.imageUrl,
+                hint: item.hint
+            };
+        });
+        
+        setCart(reservationCart);
+        setDiscount(reservation.discount * priceAdjustmentFactor); // Ajustar descuento proporcionalmente
+        setDiscountInput((reservation.discount * priceAdjustmentFactor).toString());
+        
+        // Cargar información del cliente si existe
+        if (reservation.customerName) {
+            const customerData: Customer = {
+                id: reservation.customerId || '',
+                name: reservation.customerName,
+                phone: reservation.customerPhone,
+                email: reservation.customerEmail
+            };
+            setSelectedCustomer(customerData);
+        }
+        
+        // Marcar esta reserva para completar
+        setReservationToComplete(reservation);
+        
+        toast({
+            title: "Reserva cargada para completar",
+            description: `Reserva #${reservation.reservationNumber} cargada. Restante por cobrar: S/${remainingAmount.toFixed(2)}`,
+        });
+    };
+
+    // Función llamada cuando se crea una reserva exitosamente
+    const handleReservationCreated = (reservation: Reservation) => {
+        clearCart(true); // Limpiar carrito después de crear reserva
+        
+        // Mostrar el comprobante de reserva
+        setCompletedReservation(reservation);
+        setIsReservationReceiptModalOpen(true);
+        
+        toast({
+            title: "¡Reserva creada!",
+            description: `Reserva #${reservation.reservationNumber} creada exitosamente`,
+        });
+    };
+
 
     if (sessionLoading) {
         return (
@@ -665,6 +865,7 @@ export default function SalesPage() {
             <Tabs defaultValue="pos">
                 <TabsList className="mb-4">
                     <TabsTrigger value="pos">Punto de Venta</TabsTrigger>
+                    <TabsTrigger value="reservations">Reservas de Pedidos</TabsTrigger>
                     <TabsTrigger value="transactions">Transacciones y Devoluciones</TabsTrigger>
                 </TabsList>
                 <TabsContent value="pos">
@@ -702,8 +903,10 @@ export default function SalesPage() {
                                     {/* Debug info removida */}
                                     
                                     {filteredProducts.map(product => {
-                                        const branchStock = product.stock[selectedBranch || Object.keys(product.stock || {})[0]] || 0;
-                                        const isOutOfStock = branchStock === 0;
+                                        const availableStock = getAvailableStock(product, selectedBranch || Object.keys(product.stock || {})[0]);
+                                        const physicalStock = product.stock[selectedBranch || Object.keys(product.stock || {})[0]] || 0;
+                                        const reservedStock = product.reservedStock?.[selectedBranch || Object.keys(product.stock || {})[0]] || 0;
+                                        const isOutOfStock = availableStock === 0;
                                         
                                         return (
                                         <Card key={product.id} className={`cursor-pointer hover:shadow-lg transition-shadow ${
@@ -718,20 +921,31 @@ export default function SalesPage() {
                                                 <h3 className="text-sm font-semibold truncate">{product.name}</h3>
                                                 <p className="text-sm font-bold text-primary">S/{product.price.toFixed(2)}</p>
                                                 {(() => {
-                                                    const branchStock = product.stock[selectedBranch || Object.keys(product.stock || {})[0]] || 0;
-                                                    const isLowStock = branchStock <= 5 && branchStock > 0;
-                                                    const isOutOfStock = branchStock === 0;
+                                                    const isLowStock = availableStock <= 5 && availableStock > 0;
+                                                    const isOutOfStock = availableStock === 0;
                                                     
                                                     return (
-                                                        <p className={`text-xs ${
-                                                            isOutOfStock ? 'text-red-600 font-semibold' : 
-                                                            isLowStock ? 'text-yellow-600 font-medium' : 
-                                                            'text-muted-foreground'
-                                                        }`}>
-                                                            Stock: {branchStock}
-                                                            {isOutOfStock && ' (Agotado)'}
-                                                            {isLowStock && ' (Stock bajo)'}
-                                                        </p>
+                                                        <div className="space-y-1">
+                                                            <div className="text-xs space-y-0.5">
+                                                                <p className="text-muted-foreground">
+                                                                    📦 Stock total: {physicalStock}
+                                                                </p>
+                                                                <p className={`${
+                                                                    isOutOfStock ? 'text-red-600 font-semibold' : 
+                                                                    isLowStock ? 'text-yellow-600 font-medium' : 
+                                                                    'text-green-600 font-medium'
+                                                                }`}>
+                                                                    {isOutOfStock ? '🚫' : isLowStock ? '⚠️' : '✅'} Disponible: {availableStock}
+                                                                    {isOutOfStock && ' (Agotado)'}
+                                                                    {isLowStock && ' (Stock bajo)'}
+                                                                </p>
+                                                                {reservedStock > 0 && (
+                                                                    <p className="text-blue-600">
+                                                                        🔒 Reservado: {reservedStock}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })()}
                                             </div>
@@ -1005,6 +1219,48 @@ export default function SalesPage() {
                                         {discount > 0 && (
                                             <div className="flex justify-between"><span className="text-muted-foreground">Descuento aplicado</span><span className="text-destructive">-S/{discount.toFixed(2)}</span></div>
                                         )}
+                                        
+                                        {/* Indicador de Reserva */}
+                                        {reservationToComplete && (
+                                            <div className="border-t border-b py-3 my-2 bg-blue-50 rounded-md p-3">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar className="h-4 w-4 text-blue-600" />
+                                                        <span className="font-medium text-blue-800">Completando Reserva #{reservationToComplete.reservationNumber}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-sm space-y-1">
+                                                    {(() => {
+                                                        const originalSubtotal = reservationToComplete.items.reduce((sum, item) => 
+                                                            sum + (item.price * item.quantity), 0
+                                                        );
+                                                        const originalTotal = originalSubtotal - reservationToComplete.discount;
+                                                        const depositAmount = reservationToComplete.depositAmount || 0;
+                                                        const remainingAmount = originalTotal - depositAmount;
+                                                        
+                                                        return (
+                                                            <>
+                                                                <div className="flex justify-between text-muted-foreground">
+                                                                    <span>Total original de la reserva:</span>
+                                                                    <span>S/{originalTotal.toFixed(2)}</span>
+                                                                </div>
+                                                                {depositAmount > 0 && (
+                                                                    <div className="flex justify-between text-green-600">
+                                                                        <span>💰 Adelanto ya pagado:</span>
+                                                                        <span>S/{depositAmount.toFixed(2)}</span>
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex justify-between font-medium text-orange-600 border-t pt-1">
+                                                                    <span>Restante por cobrar:</span>
+                                                                    <span>S/{remainingAmount.toFixed(2)}</span>
+                                                                </div>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
                                         <div className="flex justify-between font-bold text-lg"><span>Total</span><span>S/{total.toFixed(2)}</span></div>
                                     </div>
                                     <Separator />
@@ -1125,24 +1381,48 @@ export default function SalesPage() {
                                         </div>
                                     </div>
                                 </CardContent>
-                                <CardFooter>
+                                <CardFooter className="space-y-2">
+                                    {/* Botón para crear reserva */}
+                                    <Button 
+                                        className="w-full" 
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={handleCreateReservation}
+                                        disabled={cart.length === 0}
+                                    >
+                                        <Calendar className="mr-2 h-4 w-4" />
+                                        Crear Reserva de Pedido
+                                    </Button>
+                                    
+                                    {/* Botón principal de pago */}
                                     <Button 
                                         className="w-full" 
                                         size="lg" 
                                         onClick={processPayment} 
-                                        style={{ backgroundColor: 'hsl(var(--accent))', color: 'hsl(var(--accent-foreground))' }} 
+                                        style={{ 
+                                            backgroundColor: reservationToComplete ? 'hsl(var(--primary))' : 'hsl(var(--accent))', 
+                                            color: reservationToComplete ? 'hsl(var(--primary-foreground))' : 'hsl(var(--accent-foreground))' 
+                                        }} 
                                         disabled={cart.length === 0 || isProcessingPayment || !activeSession}
                                     >
-                                        <CreditCard className="mr-2 h-4 w-4" />
+                                        {reservationToComplete ? <Calendar className="mr-2 h-4 w-4" /> : <CreditCard className="mr-2 h-4 w-4" />}
                                         {isProcessingPayment ? 
                                             'Procesando...' : 
-                                            `Procesar Pago - S/${total.toFixed(2)} (${paymentMethod})`
+                                            reservationToComplete ? 
+                                                `Completar Reserva #${reservationToComplete.reservationNumber} - S/${total.toFixed(2)}` :
+                                                `Procesar Pago - S/${total.toFixed(2)} (${paymentMethod})`
                                         }
                                     </Button>
                                 </CardFooter>
                             </Card>
                         </div>
                     </div>
+                </TabsContent>
+                <TabsContent value="reservations">
+                    <ReservationsManager 
+                        branchId={selectedBranch || undefined}
+                        onCompleteReservation={handleCompleteReservation}
+                    />
                 </TabsContent>
                 <TabsContent value="transactions">
                     <Card>
@@ -1229,6 +1509,26 @@ export default function SalesPage() {
       
             <ReceiptModal isOpen={isReceiptModalOpen} onOpenChange={setIsReceiptModalOpen} saleDetails={completedSale} />
             <ReturnModal isOpen={isReturnModalOpen} onOpenChange={setIsReturnModalOpen} sale={saleToReturn} />
+            <ReservationModal 
+                isOpen={isReservationModalOpen} 
+                onOpenChange={setIsReservationModalOpen}
+                saleData={cart.length > 0 ? {
+                    cart,
+                    total,
+                    subtotal,
+                    tax: finalTax,
+                    discount,
+                    selectedBranch: selectedBranch!
+                } : null}
+                onReservationCreated={handleReservationCreated}
+            />
+
+            {/* Modal de Comprobante de Reserva */}
+            <ReservationReceiptModal 
+                isOpen={isReservationReceiptModalOpen} 
+                onOpenChange={setIsReservationReceiptModalOpen}
+                reservationDetails={completedReservation}
+            />
         </>
     )
 }
