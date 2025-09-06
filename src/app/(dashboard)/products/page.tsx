@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PlusCircle, Building2 } from "lucide-react";
+import { PlusCircle, Building2, Package } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProductModal } from '@/components/product-modal';
 import type { Product } from '@/types/product';
@@ -80,11 +80,26 @@ export default function ProductsPage() {
     return arr;
   }, [products]);
 
+  // Calcular estadísticas
+  const totalProducts = products.length;
+  const activeProducts = products.filter(p => p.active !== false).length;
+  const avgPrice = products.length > 0 ? products.reduce((acc, p) => acc + (p.price || 0), 0) / products.length : 0;
+  const totalCategories = categories.length - 1; // -1 porque 'Todos' no cuenta
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Productos</h1>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Productos</h1>
+          <p className="text-muted-foreground">Gestiona tu catálogo de productos y precios</p>
+        </div>
         <div className="flex items-center gap-4">
+          <Button variant="outline" asChild>
+            <a href="/inventory" className="flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Ver Inventario
+            </a>
+          </Button>
           {canViewBranchSelector && (
             <div className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
@@ -109,6 +124,49 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <h3 className="text-sm font-medium">Total Productos</h3>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalProducts}</div>
+            <p className="text-xs text-muted-foreground">productos registrados</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <h3 className="text-sm font-medium">Productos Activos</h3>
+            <Badge variant="outline" className="h-4 w-4 p-0"></Badge>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{activeProducts}</div>
+            <p className="text-xs text-muted-foreground">disponibles para venta</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <h3 className="text-sm font-medium">Precio Promedio</h3>
+            <span className="h-4 w-4 text-muted-foreground">$</span>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${avgPrice.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">precio promedio</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <h3 className="text-sm font-medium">Categorías</h3>
+            <div className="h-4 w-4 text-muted-foreground">📂</div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalCategories}</div>
+            <p className="text-xs text-muted-foreground">categorías diferentes</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Tabs defaultValue="Todos" className="w-full">
       <TabsList className="grid w-full grid-cols-4 mb-4">
       {categories.map(category => (
@@ -116,10 +174,36 @@ export default function ProductsPage() {
       ))}
     </TabsList>
         
-    {categories.map(category => (
-            <TabsContent key={category} value={category}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {(category === 'Todos' ? products : products.filter(p => p.category === category)).map(product => {
+    {categories.map(category => {
+      const categoryProducts = category === 'Todos' ? products : products.filter(p => p.category === category);
+      return (
+        <TabsContent key={category} value={category}>
+          {categoryProducts.length === 0 ? (
+            <Card>
+              <CardContent className="py-12">
+                <div className="text-center">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">
+                    {category === 'Todos' ? 'No hay productos registrados' : `No hay productos en "${category}"`}
+                  </h3>
+                  <p className="text-muted-foreground mb-4">
+                    {category === 'Todos' 
+                      ? 'Comienza agregando tu primer producto al catálogo.'
+                      : 'Agrega productos a esta categoría o selecciona otra categoría.'
+                    }
+                  </p>
+                  {category === 'Todos' && (
+                    <Button onClick={() => handleOpenModal(null)}>
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Agregar Primer Producto
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {categoryProducts.map(product => {
                         const stockAmount = getStockDisplay(product);
                         const stockLabel = getStockLabel();
                         return (
@@ -160,10 +244,12 @@ export default function ProductsPage() {
                                 </CardFooter>
                             </Card>
                         )
-                    })}
-                </div>
+                      })}
+                    </div>
+                  )}
             </TabsContent>
-        ))}
+        )
+      })}
       </Tabs>
       <ProductModal 
         product={selectedProduct} 

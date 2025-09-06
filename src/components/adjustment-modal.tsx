@@ -43,9 +43,10 @@ interface AdjustmentModalProps {
     product: Product | null;
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
+    mode?: 'add' | 'edit';
 }
 
-export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentModalProps) {
+export function AdjustmentModal({ product, isOpen, onOpenChange, mode = 'edit' }: AdjustmentModalProps) {
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const form = useForm<AdjustmentFormValues>({
@@ -56,11 +57,23 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
 
     useEffect(() => {
         if (isOpen && product) {
-            form.reset({
-                stock: product.stock,
-            });
+            if (mode === 'add') {
+                // En modo agregar, iniciamos con valores en 0
+                const emptyStock: Record<string, number> = {};
+                Object.keys(product.stock || {}).forEach(branchId => {
+                    emptyStock[branchId] = 0;
+                });
+                form.reset({
+                    stock: emptyStock,
+                });
+            } else {
+                // En modo editar, usamos los valores actuales
+                form.reset({
+                    stock: product.stock,
+                });
+            }
         }
-    }, [isOpen, product, form]);
+    }, [isOpen, product, mode, form]);
 
     const authState = useAuth();
     useEffect(() => {
@@ -73,21 +86,37 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
         if (!product) return;
         setLoading(true);
         try {
+            let finalStock: Record<string, number>;
+            
+            if (mode === 'add') {
+                // En modo agregar, sumamos las cantidades al stock actual
+                finalStock = { ...product.stock };
+                Object.entries(data.stock).forEach(([branchId, addAmount]) => {
+                    if (addAmount > 0) {
+                        finalStock[branchId] = (finalStock[branchId] || 0) + addAmount;
+                    }
+                });
+            } else {
+                // En modo editar, reemplazamos directamente
+                finalStock = data.stock;
+            }
+
             // La lógica para guardar el producto se actualizaría para manejar el nuevo formato de stock
-            await saveProduct({ id: product.id, stock: data.stock });
+            await saveProduct({ id: product.id, stock: finalStock });
 
             // Registrar auditoría del ajuste
             await addDoc(collection(db, 'inventory_adjustments'), {
                 productId: product.id,
                 productName: product.name,
                 before: product.stock,
-                after: data.stock,
+                after: finalStock,
+                mode: mode,
                 changedAt: Date.now(),
                 user: null,
             });
             
             toast({
-                title: "Stock Actualizado",
+                title: mode === 'add' ? "Stock Agregado" : "Stock Actualizado",
                 description: `El stock de "${product.name}" ha sido ajustado.`,
             });
             onOpenChange(false);
@@ -114,9 +143,14 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>Ajuste Manual de Stock</DialogTitle>
+                    <DialogTitle>
+                        {mode === 'add' ? 'Agregar Stock' : 'Ajuste Manual de Stock'}
+                    </DialogTitle>
                     <DialogDescription>
-                        Actualiza la cantidad de stock para <span className="font-semibold">{product?.name}</span> en cada sucursal.
+                        {mode === 'add' 
+                            ? `Aumenta la cantidad de stock para ${product?.name} en cada sucursal.`
+                            : `Actualiza la cantidad de stock para ${product?.name} en cada sucursal.`
+                        }
                     </DialogDescription>
                 </DialogHeader>
                 <Form {...form}>
@@ -131,9 +165,22 @@ export function AdjustmentModal({ product, isOpen, onOpenChange }: AdjustmentMod
                                     defaultValue={product?.stock[branch.id] || 0}
                                     render={({ field }) => (
                                         <FormItem className="flex items-center justify-between">
-                                            <FormLabel className="w-1/2">{branch.name}</FormLabel>
+                                            <div className="w-1/2">
+                                                <FormLabel>{branch.name}</FormLabel>
+                                                {mode === 'add' && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Stock actual: {product?.stock[branch.id] || 0}
+                                                    </p>
+                                                )}
+                                            </div>
                                             <FormControl>
-                                                <Input type="number" placeholder="0" {...field} className="w-1/2" />
+                                                <Input 
+                                                    type="number" 
+                                                    placeholder={mode === 'add' ? "Cantidad a agregar" : "0"} 
+                                                    min={mode === 'add' ? "0" : undefined}
+                                                    {...field} 
+                                                    className="w-1/2" 
+                                                />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
